@@ -3,17 +3,21 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_optional_user
+from app.core.ratelimit import rate_limit
 from app.models.page_version import PageVersion
-from app.models.project import Project, VISIBILITY_PUBLIC
+from app.models.project import VISIBILITY_PUBLIC, Project
 from app.models.user import User
 from app.permissions import service as perms
 from app.schemas.public import PublicPage
-from app.services import project_service
+from app.schemas.share_link import SharePasswordVerify
+from app.services import project_service, share_link_service
 
 router = APIRouter(prefix="/public", tags=["public"])
 
 
-def _to_page(project: Project, workspace_slug: str, ver: PageVersion, is_latest: bool) -> PublicPage:
+def _to_page(
+    project: Project, workspace_slug: str, ver: PageVersion, is_latest: bool
+) -> PublicPage:
     return PublicPage(
         workspace_slug=workspace_slug,
         project_slug=project.slug,
@@ -70,3 +74,43 @@ def public_version(
         raise HTTPException(status_code=404, detail="version_not_found")
     is_latest = project.latest_version_id == ver.id
     return _to_page(project, workspace_slug, ver, is_latest=is_latest)
+
+
+def _share_page(db: Session, link, project: Project) -> PublicPage:
+    ver = share_link_service.resolve_version(db, link, project)
+    if ver is None:
+        raise HTTPException(status_code=404, detail="no_versions")
+    share_link_service.register_view(db, link)
+    workspace_slug = project.workspace.slug
+    is_latest = project.latest_version_id == ver.id
+    return _to_page(project, workspace_slug, ver, is_latest=is_latest)
+
+
+@router.get("/share/{share_token}", response_model=PublicPage)
+def public_share(share_token: str, db: Session = Depends(get_db)):
+    link = share_link_service.find_active(db, share_token)
+    if link is None:
+        raise HTTPException(status_code=404, detail="invalid_or_expired")
+    if link.password_hash is not None:
+        raise HTTPException(status_code=401, detail="password_required")
+    project = db.get(Project, link.project_id)
+    return _share_page(db, link, project)
+
+
+@router.post(
+    "/share/{share_token}/verify-password",
+    response_model=PublicPage,
+    dependencies=[rate_limit("share_password", limit=10, window_seconds=60)],
+)
+def verify_share_password(
+    share_token: str,
+    payload: SharePasswordVerify,
+    db: Session = Depends(get_db),
+):
+    link = share_link_service.find_active(db, share_token)
+    if link is None:
+        raise HTTPException(status_code=404, detail="invalid_or_expired")
+    if not share_link_service.check_password(link, payload.password):
+        raise HTTPException(status_code=403, detail="invalid_password")
+    project = db.get(Project, link.project_id)
+    return _share_page(db, link, project)

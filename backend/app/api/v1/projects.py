@@ -1,13 +1,14 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.actor import Actor, get_actor
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.ratelimit import rate_limit
 from app.core.urls import latest_url, version_url
-from app.models.page_version import SOURCES, SOURCE_WEB
+from app.models.page_version import SOURCE_WEB, SOURCES
 from app.models.user import User
 from app.models.workspace import ROLE_EDITOR
 from app.permissions import service as perms
@@ -19,7 +20,7 @@ from app.schemas.project import (
     VersionOut,
     VersionSummary,
 )
-from app.services import project_service, workspace_service
+from app.services import audit_service, project_service, workspace_service
 
 router = APIRouter(tags=["projects"])
 
@@ -41,9 +42,14 @@ def _authorize_publish(db: Session, actor: Actor, workspace, slug: str, source: 
     return SOURCE_WEB
 
 
-@router.post("/projects.publish", response_model=PublishResponse)
+@router.post(
+    "/projects.publish",
+    response_model=PublishResponse,
+    dependencies=[rate_limit("publish", limit=30, window_seconds=60)],
+)
 def publish(
     payload: PublishRequest,
+    request: Request,
     actor: Actor = Depends(get_actor),
     db: Session = Depends(get_db),
 ):
@@ -74,6 +80,16 @@ def publish(
             force=payload.force,
         )
     except project_service.SecretDetectedError as exc:
+        audit_service.record(
+            db,
+            action="secret_scan.block",
+            target_type="project",
+            workspace_id=workspace.id,
+            user_id=actor.user_id,
+            token_id=actor.token_id,
+            request=request,
+            metadata={"slug": payload.slug, "findings": len(exc.findings)},
+        )
         raise HTTPException(
             status_code=400,
             detail={
@@ -83,6 +99,22 @@ def publish(
             },
         ) from exc
 
+    audit_service.record(
+        db,
+        action="version.create",
+        target_type="page_version",
+        target_id=ver.id,
+        workspace_id=workspace.id,
+        user_id=actor.user_id,
+        token_id=actor.token_id,
+        request=request,
+        metadata={
+            "slug": project.slug,
+            "version": ver.version_number,
+            "source": effective_source,
+            "secret_scan_status": ver.secret_scan_status,
+        },
+    )
     return PublishResponse(
         project_id=project.id,
         version_id=ver.id,

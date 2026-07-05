@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.ratelimit import rate_limit
 from app.core.security import create_access_token
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, UserOut
@@ -25,7 +26,12 @@ def _set_session_cookie(response: Response, user: User) -> None:
     )
 
 
-@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[rate_limit("register", limit=5, window_seconds=60)],
+)
 def register(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     try:
         user = auth_service.register_user(db, payload.email, payload.password, payload.name)
@@ -35,7 +41,11 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
     return user
 
 
-@router.post("/login", response_model=UserOut)
+@router.post(
+    "/login",
+    response_model=UserOut,
+    dependencies=[rate_limit("login", limit=10, window_seconds=60)],
+)
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     try:
         user = auth_service.authenticate(db, payload.email, payload.password)

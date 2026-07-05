@@ -71,3 +71,16 @@ def test_cross_user_workspace_isolation(client):
         # user B cannot view user A's workspace
         resp = cb.get(f"/api/v1/workspaces/{a_ws_id}")
         assert resp.status_code == 403
+
+
+def test_login_rate_limited(client):
+    register(client, "rl@example.com", password="secretpass")
+    # login bucket allows 10/min; the 11th within the window is throttled
+    last = None
+    for _ in range(11):
+        last = client.post(
+            "/api/v1/auth/login",
+            json={"email": "rl@example.com", "password": "wrong"},
+        )
+    assert last.status_code == 429
+    assert last.json()["detail"] == "rate_limited"

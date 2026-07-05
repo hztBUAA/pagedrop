@@ -6,12 +6,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.models.workspace import ROLE_OWNER, ROLE_ORDER
+from app.models.workspace import ROLE_ORDER, ROLE_OWNER
 from app.permissions import service as perms
 from app.schemas.workspace import (
     MemberAdd,
     MemberOut,
-    MemberUpdate,
     WorkspaceCreate,
     WorkspaceWithRole,
 )

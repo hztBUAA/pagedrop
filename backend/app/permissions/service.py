@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.project import Project, VISIBILITY_PRIVATE
+from app.models.project import VISIBILITY_PRIVATE, Project
 from app.models.user import User
 from app.models.workspace import (
     ROLE_ADMIN,

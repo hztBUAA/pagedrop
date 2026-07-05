@@ -13,8 +13,8 @@ os.environ["TOKEN_PEPPER"] = "test-token-pepper"
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.core.database import Base, engine  # noqa: E402
 import app.models  # noqa: E402,F401
+from app.core.database import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -23,6 +23,14 @@ def _create_schema():
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def _reset_ratelimit():
+    from app.core import ratelimit
+
+    ratelimit.reset()
+    yield
 
 
 @pytest.fixture

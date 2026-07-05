@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+.pnpm-store/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.token.env
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Build artifacts
+apps/web-vue/dist/
+apps/renderer-react/dist/
+apps/cli/dist/
+
+# Local data
+*.sqlite3
+*.db
+pgdata/

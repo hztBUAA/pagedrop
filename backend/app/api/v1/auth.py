@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.actor import Actor, get_actor
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.ratelimit import rate_limit
 from app.core.security import create_access_token
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, UserOut
+from app.schemas.auth import LoginRequest, RegisterRequest, UserOut, WhoamiOut
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -66,3 +67,16 @@ def logout(response: Response):
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.get("/whoami", response_model=WhoamiOut)
+def whoami(actor: Actor = Depends(get_actor)):
+    return WhoamiOut(
+        type="token" if actor.token else "user",
+        user_id=actor.user_id,
+        email=actor.user.email if actor.user else None,
+        token_id=actor.token_id,
+        token_name=actor.token.name if actor.token else None,
+        workspace_id=actor.token.workspace_id if actor.token else None,
+        scopes=sorted(actor.scopes),
+    )

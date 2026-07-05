@@ -73,6 +73,18 @@ def test_cross_user_workspace_isolation(client):
         assert resp.status_code == 403
 
 
+def test_whoami_session_user(client):
+    register(client, "who@example.com", name="Who")
+    resp = client.get("/api/v1/auth/whoami")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["type"] == "user"
+    assert body["email"] == "who@example.com"
+    assert body["token_id"] is None
+    # session users carry full scopes
+    assert "projects:write" in body["scopes"]
+
+
 def test_login_rate_limited(client):
     register(client, "rl@example.com", password="secretpass")
     # login bucket allows 10/min; the 11th within the window is throttled

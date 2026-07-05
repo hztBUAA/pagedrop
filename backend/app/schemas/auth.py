@@ -24,3 +24,13 @@ class UserOut(BaseModel):
     avatar_url: str | None = None
     is_platform_admin: bool
     created_at: datetime
+
+
+class WhoamiOut(BaseModel):
+    type: str
+    user_id: UUID | None = None
+    email: str | None = None
+    token_id: UUID | None = None
+    token_name: str | None = None
+    workspace_id: UUID | None = None
+    scopes: list[str] = Field(default_factory=list)

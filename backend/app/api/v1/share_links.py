@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.core.actor import Actor, get_actor
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.urls import share_url
@@ -61,13 +62,19 @@ def create_share_link(
     slug: str,
     payload: ShareLinkCreate,
     request: Request,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(get_actor),
     db: Session = Depends(get_db),
 ):
     project = project_service.get_project_by_slugs(db, workspace_slug, slug)
     if project is None:
         raise HTTPException(status_code=404, detail="project_not_found")
-    if not perms.can_create_share_link(db, user, project):
+    if actor.token is not None:
+        actor.require_scope("share_links:create")
+        if actor.token.workspace_id != project.workspace_id:
+            raise HTTPException(status_code=403, detail="token_workspace_mismatch")
+        if not actor.token_allows_project(slug):
+            raise HTTPException(status_code=403, detail="project_not_in_allowlist")
+    elif not perms.can_create_share_link(db, actor.user, project):
         raise HTTPException(status_code=403, detail="forbidden")
     try:
         link, plaintext = share_link_service.create(
@@ -78,7 +85,7 @@ def create_share_link(
             password=payload.password,
             expires_at=payload.expires_at,
             max_views=payload.max_views,
-            user_id=user.id,
+            user_id=actor.user_id,
         )
     except share_link_service.ShareLinkError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -89,7 +96,8 @@ def create_share_link(
         target_type="share_link",
         target_id=link.id,
         workspace_id=project.workspace_id,
-        user_id=user.id,
+        user_id=actor.user_id,
+        token_id=actor.token_id,
         request=request,
     )
     return ShareLinkCreateResponse(

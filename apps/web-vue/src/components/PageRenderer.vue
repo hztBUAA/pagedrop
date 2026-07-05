@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 
 const props = defineProps<{
   contentType: string;
@@ -7,32 +7,62 @@ const props = defineProps<{
   renderedHtml: string | null;
 }>();
 
-// sandbox_html is never trusted: render inside a fully sandboxed iframe with
-// no allow-scripts so nothing executes with page privileges.
-const isSandbox = computed(() => props.contentType === "sandbox_html");
-const isSafeHtml = computed(() => props.contentType === "safe_html");
-const isMarkdown = computed(() => props.contentType === "markdown");
+// The React artifact renderer is served here. In dev, point at its Vite server
+// via VITE_RENDERER_URL (e.g. http://localhost:5175); in prod it is mounted at /render/.
+const RENDERER_URL = (import.meta.env.VITE_RENDERER_URL as string | undefined) ?? "/render/";
+const rendererOrigin = new URL(RENDERER_URL, window.location.origin).origin;
+
+const frame = ref<HTMLIFrameElement | null>(null);
+const frameHeight = ref(240);
+let ready = false;
+
+function payload() {
+  return {
+    type: "render",
+    payload: {
+      contentType: props.contentType,
+      sourceContent: props.sourceContent,
+      renderedHtml: props.renderedHtml,
+    },
+  };
+}
+
+function send() {
+  if (ready && frame.value?.contentWindow) {
+    frame.value.contentWindow.postMessage(payload(), rendererOrigin);
+  }
+}
+
+function onMessage(e: MessageEvent) {
+  if (e.source !== frame.value?.contentWindow) return;
+  const data = e.data;
+  if (data?.source !== "pagedrop-renderer") return;
+  if (data.type === "ready") {
+    ready = true;
+    send();
+  } else if (data.type === "height" && typeof data.height === "number") {
+    frameHeight.value = Math.max(120, Math.ceil(data.height) + 8);
+  }
+}
+
+window.addEventListener("message", onMessage);
+onBeforeUnmount(() => window.removeEventListener("message", onMessage));
+
+// Re-send whenever the content changes (e.g. switching versions).
+watch(() => [props.contentType, props.sourceContent, props.renderedHtml], send);
 </script>
 
 <template>
   <div class="renderer">
-    <!-- safe_html: server-sanitized (nh3), no scripts -->
-    <div v-if="isSafeHtml && renderedHtml" class="prose" v-html="renderedHtml" />
-
-    <!-- sandbox_html: isolated iframe, scripts disabled -->
     <iframe
-      v-else-if="isSandbox"
-      class="sandbox"
-      sandbox=""
+      ref="frame"
+      class="render-frame"
+      :src="RENDERER_URL"
+      sandbox="allow-scripts"
       referrerpolicy="no-referrer"
-      :srcdoc="sourceContent"
-      title="sandboxed content"
+      title="rendered content"
+      :style="{ height: frameHeight + 'px' }"
     />
-
-    <!-- markdown: Phase 4 shows source; Phase 5 mounts the React renderer -->
-    <pre v-else-if="isMarkdown" class="source">{{ sourceContent }}</pre>
-
-    <div v-else class="muted">Nothing to render.</div>
   </div>
 </template>
 
@@ -40,29 +70,11 @@ const isMarkdown = computed(() => props.contentType === "markdown");
 .renderer {
   overflow-wrap: anywhere;
 }
-.sandbox {
+.render-frame {
   width: 100%;
-  min-height: 70vh;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: #fff;
-}
-.source {
-  white-space: pre-wrap;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9rem;
-}
-.prose {
-  line-height: 1.6;
-}
-:deep(.prose img) {
-  max-width: 100%;
-}
-:deep(.prose pre) {
-  overflow-x: auto;
+  border: none;
+  display: block;
+  background: transparent;
+  transition: height 0.15s ease;
 }
 </style>

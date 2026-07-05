@@ -1,0 +1,150 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --text: #e6e8eb;
+  --text-dim: #9aa3b2;
+  --border: #2a2f3a;
+  --surface: #1e222b;
+  --accent: #5b8cff;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.pd-root {
+  padding: 0;
+}
+.pd-empty {
+  color: var(--text-dim);
+  padding: 1rem 0;
+}
+
+.prose {
+  line-height: 1.65;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.prose h1,
+.prose h2,
+.prose h3 {
+  line-height: 1.25;
+  margin-top: 1.6em;
+  margin-bottom: 0.5em;
+}
+.prose h1 {
+  font-size: 1.8rem;
+}
+.prose h2 {
+  font-size: 1.45rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+.prose h3 {
+  font-size: 1.2rem;
+}
+.prose p {
+  margin: 0.75em 0;
+}
+.prose a {
+  color: var(--accent);
+}
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.prose pre {
+  background: #0b0e13;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+}
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+.prose :not(pre) > code {
+  background: var(--surface);
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+}
+.prose blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 1em 0;
+  padding: 0.2em 1em;
+  color: var(--text-dim);
+}
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+.prose th,
+.prose td {
+  border: 1px solid var(--border);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.prose th {
+  background: var(--surface);
+}
+.prose ul,
+.prose ol {
+  padding-left: 1.4em;
+}
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+.mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1em 0;
+}
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-error {
+  color: #ff6b6b;
+  background: var(--surface);
+  border: 1px solid #ff6b6b;
+  border-radius: 8px;
+  padding: 0.75rem;
+  white-space: pre-wrap;
+}
+
+.pd-sandbox {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
+
+@media (max-width: 640px) {
+  .prose {
+    font-size: 0.97rem;
+  }
+  .prose h1 {
+    font-size: 1.5rem;
+  }
+}

@@ -138,6 +138,24 @@ def list_projects(
     return project_service.list_projects(db, workspace_id)
 
 
+def _load_project_for_read(
+    db: Session, actor: Actor, workspace_slug: str, slug: str, scope: str
+):
+    """Load a project for read access by either a session user or an API token."""
+    project = project_service.get_project_by_slugs(db, workspace_slug, slug)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    if actor.token is not None:
+        actor.require_scope(scope)
+        if actor.token.workspace_id != project.workspace_id:
+            raise HTTPException(status_code=403, detail="token_workspace_mismatch")
+        if not actor.token_allows_project(slug):
+            raise HTTPException(status_code=403, detail="project_not_in_allowlist")
+    elif not perms.can_view_project(db, actor.user, project):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return project
+
+
 def _load_project_for_manage(db: Session, user: User, workspace_slug: str, slug: str):
     project = project_service.get_project_by_slugs(db, workspace_slug, slug)
     if project is None:
@@ -151,29 +169,20 @@ def _load_project_for_manage(db: Session, user: User, workspace_slug: str, slug:
 def get_project(
     workspace_slug: str,
     slug: str,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(get_actor),
     db: Session = Depends(get_db),
 ):
-    project = project_service.get_project_by_slugs(db, workspace_slug, slug)
-    if project is None:
-        raise HTTPException(status_code=404, detail="project_not_found")
-    if not perms.can_view_project(db, user, project):
-        raise HTTPException(status_code=403, detail="forbidden")
-    return project
+    return _load_project_for_read(db, actor, workspace_slug, slug, "projects:read")
 
 
 @router.get("/projects/{workspace_slug}/{slug}/versions", response_model=list[VersionSummary])
 def list_versions(
     workspace_slug: str,
     slug: str,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(get_actor),
     db: Session = Depends(get_db),
 ):
-    project = project_service.get_project_by_slugs(db, workspace_slug, slug)
-    if project is None:
-        raise HTTPException(status_code=404, detail="project_not_found")
-    if not perms.can_view_project(db, user, project):
-        raise HTTPException(status_code=403, detail="forbidden")
+    project = _load_project_for_read(db, actor, workspace_slug, slug, "versions:read")
     return project_service.list_versions(db, project.id)
 
 
@@ -184,14 +193,10 @@ def get_version(
     workspace_slug: str,
     slug: str,
     version: int,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(get_actor),
     db: Session = Depends(get_db),
 ):
-    project = project_service.get_project_by_slugs(db, workspace_slug, slug)
-    if project is None:
-        raise HTTPException(status_code=404, detail="project_not_found")
-    if not perms.can_view_project(db, user, project):
-        raise HTTPException(status_code=403, detail="forbidden")
+    project = _load_project_for_read(db, actor, workspace_slug, slug, "versions:read")
     ver = project_service.get_version_by_number(db, project.id, version)
     if ver is None:
         raise HTTPException(status_code=404, detail="version_not_found")

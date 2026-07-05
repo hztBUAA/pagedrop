@@ -107,3 +107,29 @@ def test_last_used_updates(owner):
     _publish_with_token(token, owner.workspace_slug, slug="lu")
     listed = owner.get(f"/api/v1/tokens?workspace_id={owner.workspace_id}").json()
     assert listed[0]["last_used_at"] is not None
+
+
+def test_token_read_versions(owner):
+    token = _create_token(owner, ["versions:write", "versions:read"]).json()["token"]
+    _publish_with_token(token, owner.workspace_slug, slug="readable")
+    with TestClient(app) as api:
+        headers = {"Authorization": f"Bearer {token}"}
+        vers = api.get(
+            f"/api/v1/projects/{owner.workspace_slug}/readable/versions",
+            headers=headers,
+        )
+        assert vers.status_code == 200, vers.text
+        assert len(vers.json()) == 1
+
+
+def test_token_read_requires_scope(owner):
+    # write-only token cannot list versions
+    token = _create_token(owner, ["versions:write"]).json()["token"]
+    _publish_with_token(token, owner.workspace_slug, slug="noread")
+    with TestClient(app) as api:
+        resp = api.get(
+            f"/api/v1/projects/{owner.workspace_slug}/noread/versions",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "insufficient_scope"

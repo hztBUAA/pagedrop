@@ -1,0 +1,66 @@
+# PageDrop production stack: PostgreSQL + FastAPI backend + Caddy (static web,
+# React renderer, and API reverse proxy).
+#
+# Usage:
+#   cp .env.example .env   # then edit secrets
+#   docker compose up -d --build
+#
+# All commands run from the infra/ directory.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pagedrop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-pagedrop}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pagedrop} -d ${POSTGRES_DB:-pagedrop}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://pagedrop:${POSTGRES_PASSWORD}@postgres:5432/pagedrop}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      TOKEN_PEPPER: ${TOKEN_PEPPER:?set TOKEN_PEPPER in .env}
+      APP_BASE_URL: ${APP_BASE_URL:-https://pagedrop.justinhuang.top}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://pagedrop.justinhuang.top}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      DEBUG: ${DEBUG:-false}
+    expose:
+      - "8000"
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-pagedrop.justinhuang.top}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pg_data:
+  caddy_data:
+  caddy_config:

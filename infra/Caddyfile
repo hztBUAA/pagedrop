@@ -1,0 +1,28 @@
+# PageDrop reverse proxy + static hosting.
+# SITE_ADDRESS controls the public address and TLS:
+#   - production:  pagedrop.justinhuang.top   (Caddy auto-provisions HTTPS)
+#   - local test:  :80                        (plain HTTP, set in compose)
+{$SITE_ADDRESS:pagedrop.justinhuang.top} {
+	encode gzip zstd
+
+	# Backend API.
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# React artifact renderer — served as an independent app, embedded by the
+	# Vue product app inside a sandboxed iframe. Assets built with a relative
+	# base, so stripping the /render prefix resolves them correctly.
+	handle_path /render/* {
+		root * /srv/render
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Vue product SPA (client-side routing → fall back to index.html).
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}

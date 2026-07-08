@@ -26,6 +26,9 @@ body {
   background: var(--bg);
   color: var(--text);
   -webkit-text-size-adjust: 100%;
+  /* clip (not hidden) prevents stray horizontal overflow without turning
+     body into a scroll container, which would break position: sticky. */
+  overflow-x: clip;
 }
 
 a {

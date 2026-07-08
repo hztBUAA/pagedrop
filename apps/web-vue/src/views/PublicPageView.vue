@@ -87,7 +87,7 @@ watch([wsSlug, projectSlug, version], load);
 
 <style scoped>
 .public-wrap {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 .reader {
   max-width: 820px;

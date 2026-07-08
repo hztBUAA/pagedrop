@@ -58,7 +58,7 @@ watch(() => [props.contentType, props.sourceContent, props.renderedHtml], send);
       ref="frame"
       class="render-frame"
       :src="RENDERER_URL"
-      sandbox="allow-scripts"
+      sandbox="allow-scripts allow-same-origin"
       referrerpolicy="no-referrer"
       title="rendered content"
       :style="{ height: frameHeight + 'px' }"
@@ -75,6 +75,5 @@ watch(() => [props.contentType, props.sourceContent, props.renderedHtml], send);
   border: none;
   display: block;
   background: transparent;
-  transition: height 0.15s ease;
 }
 </style>

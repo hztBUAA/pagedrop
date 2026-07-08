@@ -106,7 +106,7 @@ watch(() => route.params.token, load);
 
 <style scoped>
 .share-wrap {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 .pw-wrap {
   display: flex;

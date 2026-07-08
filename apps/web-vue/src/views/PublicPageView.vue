@@ -6,6 +6,7 @@ import { ApiRequestError } from "@/api/client";
 import type { PublicPage } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import PageRenderer from "@/components/PageRenderer.vue";
+import DocHeader from "@/components/DocHeader.vue";
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -63,19 +64,18 @@ watch([wsSlug, projectSlug, version], load);
     <div v-else-if="error" class="container">
       <div class="card">{{ error }}</div>
     </div>
-    <article v-else-if="page" class="container">
-      <header class="page-head">
-        <div class="row between wrap">
-          <h1>{{ page.title }}</h1>
-          <router-link v-if="auth.user" :to="manageLink" class="btn btn-sm">Manage</router-link>
-        </div>
-        <div class="muted meta">
+    <article v-else-if="page" class="container reader">
+      <DocHeader :title="page.title">
+        <template #meta>
           <span class="badge" :class="page.visibility">{{ page.visibility }}</span>
           v{{ page.version_number }}
           <span v-if="!page.is_latest"> (older version)</span>
           · updated {{ new Date(page.updated_at).toLocaleString() }}
-        </div>
-      </header>
+        </template>
+        <template #actions>
+          <router-link v-if="auth.user" :to="manageLink" class="btn btn-sm">Manage</router-link>
+        </template>
+      </DocHeader>
       <PageRenderer
         :content-type="page.content_type"
         :source-content="page.source_content"
@@ -89,19 +89,12 @@ watch([wsSlug, projectSlug, version], load);
 .public-wrap {
   min-height: 100vh;
 }
-.page-head {
-  margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.75rem;
+.reader {
+  max-width: 820px;
 }
-.page-head h1 {
-  margin: 0 0 0.35rem;
-}
-.meta {
-  font-size: 0.82rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
+@media (max-width: 640px) {
+  .reader {
+    padding: 0 0.85rem 1.5rem;
+  }
 }
 </style>

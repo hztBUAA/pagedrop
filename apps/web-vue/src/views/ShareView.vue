@@ -5,6 +5,7 @@ import { publicApi } from "@/api";
 import { ApiRequestError } from "@/api/client";
 import type { PublicPage } from "@/api/types";
 import PageRenderer from "@/components/PageRenderer.vue";
+import DocHeader from "@/components/DocHeader.vue";
 
 const route = useRoute();
 const token = () => route.params.token as string;
@@ -88,13 +89,12 @@ watch(() => route.params.token, load);
       <div class="card">{{ error }}</div>
     </div>
 
-    <article v-else-if="page" class="container">
-      <header class="page-head">
-        <h1>{{ page.title }}</h1>
-        <div class="muted meta">
+    <article v-else-if="page" class="container reader">
+      <DocHeader :title="page.title">
+        <template #meta>
           v{{ page.version_number }} · updated {{ new Date(page.updated_at).toLocaleString() }}
-        </div>
-      </header>
+        </template>
+      </DocHeader>
       <PageRenderer
         :content-type="page.content_type"
         :source-content="page.source_content"
@@ -122,15 +122,12 @@ watch(() => route.params.token, load);
 .pw-card h2 {
   margin-top: 0;
 }
-.page-head {
-  margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.75rem;
+.reader {
+  max-width: 820px;
 }
-.page-head h1 {
-  margin: 0 0 0.35rem;
-}
-.meta {
-  font-size: 0.82rem;
+@media (max-width: 640px) {
+  .reader {
+    padding: 0 0.85rem 1.5rem;
+  }
 }
 </style>

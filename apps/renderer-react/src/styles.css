@@ -128,7 +128,7 @@ body {
 
 .pd-sandbox {
   width: 100%;
-  min-height: 70vh;
+  min-height: 100dvh;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
@@ -146,5 +146,10 @@ body {
   }
   .prose h1 {
     font-size: 1.5rem;
+  }
+  .pd-sandbox {
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
   }
 }

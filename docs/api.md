@@ -11,7 +11,8 @@ Two authentication methods:
   project allowlist. The plaintext is shown only once at creation.
 
 Scopes: `projects:read`, `projects:write`, `versions:read`, `versions:write`,
-`assets:write`, `share_links:create`, `tokens:read`.
+`assets:write`, `comments:read`, `comments:write`, `share_links:create`,
+`tokens:read`.
 
 ## Auth
 
@@ -94,12 +95,46 @@ expires_at?, max_views?}`. Response includes the one-time `share_url`
 Create returns the plaintext token **once**; listings return only the prefix and
 metadata. Rate limit: 10/min.
 
+## Assets (images)
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| POST | `/assets` | cookie (editor+) or token (`assets:write`) |
+| GET | `/assets/{id}` | cookie (project/workspace access) or token (`versions:read`) |
+
+`POST /assets` is `multipart/form-data`: `file` (png/jpeg/webp/gif, ≤10 MB),
+`workspace_slug`, optional `project_slug`. Response includes `ref`
+(`pagedrop://asset/<id>`) — embed this in Markdown/HTML content. Uploads are
+content-addressed (deduped by sha256 within a workspace). Rate limit: 60/min.
+
+Reference images in content via the `pagedrop://asset/<id>` scheme. On publish,
+any workspace-scoped assets referenced by the content are attached to the
+project so they render on its public page. Clients resolve the scheme to
+`/assets/<id>` (authed) or `/public/assets/<id>` (public) at render time.
+
+## Comments
+
+| Method | Path | Auth |
+| --- | --- | --- |
+| GET | `/projects/{ws}/{slug}/comments?status=` | cookie (viewer+) or token (`comments:read`) |
+| POST | `/projects/{ws}/{slug}/comments` | cookie (member) or token (`comments:write`) |
+| POST | `/comments/{id}/resolve` | cookie (member) or token (`comments:write`) |
+| POST | `/comments/{id}/reopen` | cookie (member) or token (`comments:write`) |
+| DELETE | `/comments/{id}` | cookie (member) or token (`comments:write`) |
+
+Comments are **project-scoped** (they survive version iteration). Create body:
+`{body, thread_root_id?, anchor_version_number?, anchor_quote?, anchor_prefix?,
+anchor_suffix?}`. Passing `thread_root_id` makes the comment a reply. `status`
+filter is `open` | `resolved` (replies of matching roots are included). Token
+authors display as `agent:<token-name>`.
+
 ## Public (no auth)
 
 | Method | Path | Notes |
 | --- | --- | --- |
 | GET | `/public/projects/{ws}/{slug}/latest` | public/unlisted only |
 | GET | `/public/projects/{ws}/{slug}/versions/{n}` | |
+| GET | `/public/assets/{id}` | only assets of a viewable project |
 | GET | `/public/share/{token}` | password-protected → `401` until verified |
 | POST | `/public/share/{token}/verify-password` | `{password}`, 10/min |
 

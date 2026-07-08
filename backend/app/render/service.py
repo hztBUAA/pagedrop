@@ -32,7 +32,7 @@ def sanitize_html(html: str) -> str:
         html,
         tags=_ALLOWED_TAGS,
         attributes=_ALLOWED_ATTRS,
-        url_schemes={"http", "https", "mailto", "data"},
+        url_schemes={"http", "https", "mailto", "data", "pagedrop"},
         link_rel="noopener noreferrer nofollow",
     )
 

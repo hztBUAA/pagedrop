@@ -9,6 +9,7 @@ if os.path.exists(_tmp_db):
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_db}"
 os.environ["JWT_SECRET"] = "test-jwt-secret"
 os.environ["TOKEN_PEPPER"] = "test-token-pepper"
+os.environ["ASSETS_DIR"] = os.path.join(tempfile.gettempdir(), "pagedrop_test_assets")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -37,3 +38,15 @@ def _reset_ratelimit():
 def client():
     with TestClient(app) as c:
         yield c
+
+
+def issue_register_code(email: str, purpose: str = "register") -> str:
+    """Test helper: mint a verification code directly (bypasses SMTP)."""
+    from app.core.database import SessionLocal
+    from app.services import verification_service
+
+    db = SessionLocal()
+    try:
+        return verification_service.issue_code(db, email, purpose)
+    finally:
+        db.close()

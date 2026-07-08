@@ -40,6 +40,11 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
       DEBUG: ${DEBUG:-false}
+      SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_AUTH_CODE: ${SMTP_AUTH_CODE:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     expose:
       - "8000"
 
@@ -51,11 +56,11 @@ services:
     depends_on:
       - backend
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:-pagedrop.justinhuang.top}
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      # Behind Cloudflare Tunnel: publish plain HTTP to localhost only; the
+      # tunnel forwards the public hostname here and terminates HTTPS at the edge.
+      - "127.0.0.1:8090:80"
     volumes:
       - caddy_data:/data
       - caddy_config:/config

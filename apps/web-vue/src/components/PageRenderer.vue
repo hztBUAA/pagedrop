@@ -1,11 +1,23 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from "vue";
 
+import { assetUrl } from "../api/client";
+
 const props = defineProps<{
   contentType: string;
   sourceContent: string;
   renderedHtml: string | null;
+  publicView?: boolean;
 }>();
+
+const ASSET_REF = /pagedrop:\/\/asset\/([0-9a-fA-F-]{8,})/g;
+
+function resolveAssets(text: string | null): string | null {
+  if (!text) return text;
+  return text.replace(ASSET_REF, (_m, id: string) =>
+    assetUrl(id, props.publicView ?? false),
+  );
+}
 
 // The React artifact renderer is served here. In dev, point at its Vite server
 // via VITE_RENDERER_URL (e.g. http://localhost:5175); in prod it is mounted at /render/.
@@ -21,8 +33,8 @@ function payload() {
     type: "render",
     payload: {
       contentType: props.contentType,
-      sourceContent: props.sourceContent,
-      renderedHtml: props.renderedHtml,
+      sourceContent: resolveAssets(props.sourceContent),
+      renderedHtml: resolveAssets(props.renderedHtml),
     },
   };
 }

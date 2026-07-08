@@ -19,4 +19,7 @@ def test_all_tables_registered():
         "api_tokens",
         "share_links",
         "audit_logs",
+        "verification_codes",
+        "assets",
+        "comments",
     }

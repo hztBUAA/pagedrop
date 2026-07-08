@@ -80,6 +80,7 @@ watch([wsSlug, projectSlug, version], load);
         :content-type="page.content_type"
         :source-content="page.source_content"
         :rendered-html="page.rendered_html"
+        :public-view="true"
       />
     </article>
   </div>

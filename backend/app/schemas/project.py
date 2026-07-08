@@ -12,7 +12,7 @@ class PublishRequest(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     content_type: str = "markdown"
     content: str
-    visibility: str = "unlisted"
+    visibility: str = "private"
     message: str | None = None
     summary: str | None = None
     source: str = "web"

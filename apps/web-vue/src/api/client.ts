@@ -39,4 +39,23 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
+  upload: async <T>(path: string, form: FormData): Promise<T> => {
+    const resp = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+    const text = await resp.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!resp.ok) {
+      throw new ApiRequestError(resp.status, data?.detail ?? data);
+    }
+    return data as T;
+  },
 };
+
+/** Resolve a stored pagedrop://asset/<id> reference to a fetchable URL. */
+export function assetUrl(assetId: string, publicView: boolean): string {
+  const path = publicView ? `/public/assets/${assetId}` : `/assets/${assetId}`;
+  return `${window.location.origin}${BASE}${path}`;
+}

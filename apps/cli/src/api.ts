@@ -58,6 +58,45 @@ export class ApiClient {
   post<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>("POST", path, body);
   }
+
+  del<T>(path: string): Promise<T> {
+    return this.request<T>("DELETE", path);
+  }
+
+  async postForm<T>(path: string, form: FormData): Promise<T> {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    let resp: Response;
+    try {
+      resp = await fetch(this.url(path), { method: "POST", headers, body: form });
+    } catch (err) {
+      throw new ApiError(0, `network error: ${(err as Error).message}`);
+    }
+    const text = await resp.text();
+    const data = text ? safeJson(text) : null;
+    if (!resp.ok) {
+      const detail = data && typeof data === "object" && "detail" in data ? data.detail : data;
+      throw new ApiError(resp.status, detail ?? text);
+    }
+    return data as T;
+  }
+
+  async getBytes(path: string): Promise<{ data: Buffer; contentType: string }> {
+    const headers: Record<string, string> = {};
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    let resp: Response;
+    try {
+      resp = await fetch(this.url(path), { method: "GET", headers });
+    } catch (err) {
+      throw new ApiError(0, `network error: ${(err as Error).message}`);
+    }
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new ApiError(resp.status, safeJson(text) ?? text);
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return { data: buf, contentType: resp.headers.get("content-type") ?? "application/octet-stream" };
+  }
 }
 
 function safeJson(text: string): unknown {

@@ -20,6 +20,8 @@ FULL_SCOPES = {
     "versions:read",
     "versions:write",
     "assets:write",
+    "comments:read",
+    "comments:write",
     "share_links:create",
     "tokens:read",
 }

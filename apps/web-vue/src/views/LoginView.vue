@@ -60,6 +60,7 @@ async function submit() {
       </button>
       <p class="muted" style="margin-top: 1rem; text-align: center">
         No account? <router-link :to="{ name: 'register' }">Register</router-link>
+        · <router-link :to="{ name: 'reset-password' }">Forgot password?</router-link>
       </p>
     </form>
   </div>

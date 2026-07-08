@@ -1,13 +1,37 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join, resolve } from "node:path";
 
 import { Command } from "commander";
 
 import { ApiClient, ApiError } from "./api.js";
 import { resolveProfile, upsertProfile, configPath, type Profile } from "./config.js";
+import {
+  EXT_BY_MIME,
+  extractAssetIds,
+  extractLocalImageRefs,
+  mimeForPath,
+  replaceRef,
+} from "./media.js";
 
 const DEFAULT_URL = "https://pagedrop.justinhuang.top";
+
+interface AssetResponse {
+  id: string;
+  ref: string;
+  content_type: string;
+}
+
+interface CommentResponse {
+  id: string;
+  thread_root_id: string | null;
+  status: string;
+  body: string;
+  author_display: string | null;
+  anchor_quote: string | null;
+  anchor_version_number: number | null;
+  created_at: string;
+}
 
 interface Whoami {
   type: string;
@@ -41,6 +65,42 @@ function contentTypeFromPath(path: string): string {
 function readInput(file: string | undefined): string {
   if (!file || file === "-") return readFileSync(0, "utf8");
   return readFileSync(file, "utf8");
+}
+
+/**
+ * Upload local images referenced by the content and rewrite each reference to a
+ * stable `pagedrop://asset/<id>` ref. Remote/data/pagedrop refs are left as-is.
+ */
+async function uploadLocalImages(
+  client: ApiClient,
+  content: string,
+  baseDir: string,
+  workspace: string,
+  slug: string,
+): Promise<{ content: string; count: number }> {
+  let out = content;
+  let count = 0;
+  for (const ref of extractLocalImageRefs(content)) {
+    const abs = resolve(baseDir, ref);
+    if (!existsSync(abs)) {
+      process.stderr.write(`warning: image not found, left as-is: ${ref}\n`);
+      continue;
+    }
+    const mime = mimeForPath(ref);
+    if (!mime) {
+      process.stderr.write(`warning: unsupported image type, left as-is: ${ref}\n`);
+      continue;
+    }
+    const bytes = readFileSync(abs);
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: mime }), basename(ref));
+    form.append("workspace_slug", workspace);
+    form.append("project_slug", slug);
+    const asset = await client.postForm<AssetResponse>("/assets", form);
+    out = replaceRef(out, ref, asset.ref);
+    count += 1;
+  }
+  return { content: out, count };
 }
 
 function fail(message: string): never {
@@ -127,20 +187,44 @@ program
   .requiredOption("-s, --slug <slug>", "project slug")
   .option("-T, --title <title>", "page title (defaults to slug)")
   .option("-c, --content-type <type>", "markdown | safe_html | sandbox_html")
-  .option("-v, --visibility <visibility>", "public | unlisted | private", "unlisted")
+  .option("-v, --visibility <visibility>", "public | unlisted | private", "private")
   .option("-m, --message <message>", "changelog message for this version")
   .option("--summary <summary>", "short summary")
+  .option("--no-images", "do not upload/rewrite local images referenced in the content")
   .option("--force", "publish even if secrets are detected", false)
   .action(async (file, opts) => {
     const content = readInput(file);
     const contentType = opts.contentType ?? (file ? contentTypeFromPath(file) : "markdown");
     const title = opts.title ?? (file ? basename(file, extname(file)) : opts.slug);
+    const client = clientFromProfile(program.opts().profile);
+
+    let finalContent = content;
+    // Only scan for local images when reading from a real file (relative paths
+    // are resolved against its directory); stdin has no base directory.
+    if (opts.images !== false && file && file !== "-") {
+      try {
+        const res = await uploadLocalImages(
+          client,
+          content,
+          dirname(resolve(file)),
+          opts.workspace,
+          opts.slug,
+        );
+        finalContent = res.content;
+        if (res.count > 0) {
+          process.stdout.write(`Uploaded ${res.count} image(s).\n`);
+        }
+      } catch (err) {
+        reportApiError(err);
+      }
+    }
+
     const body = {
       workspace_slug: opts.workspace,
       slug: opts.slug,
       title,
       content_type: contentType,
-      content,
+      content: finalContent,
       visibility: opts.visibility,
       message: opts.message ?? null,
       summary: opts.summary ?? null,
@@ -148,10 +232,7 @@ program
       force: Boolean(opts.force),
     };
     try {
-      const res = await clientFromProfile(program.opts().profile).post<PublishResponse>(
-        "/projects.publish",
-        body,
-      );
+      const res = await client.post<PublishResponse>("/projects.publish", body);
       process.stdout.write(
         `Published ${res.slug} v${res.version} (${res.visibility}, secrets: ${res.secret_scan_status}).\n` +
           `  latest:  ${res.latest_url}\n` +
@@ -242,5 +323,128 @@ program
       reportApiError(err);
     }
   });
+
+program
+  .command("pull")
+  .description("Fetch a project's content and download its attached images locally")
+  .requiredOption("-w, --workspace <slug>", "workspace slug")
+  .requiredOption("-s, --slug <slug>", "project slug")
+  .option("--version <n>", "version number (defaults to latest)", (v) => parseInt(v, 10))
+  .option("-o, --out <dir>", "output directory", ".")
+  .action(async (opts) => {
+    const client = clientFromProfile(program.opts().profile);
+    try {
+      let versionNumber = opts.version as number | undefined;
+      if (versionNumber === undefined) {
+        const versions = await client.get<Array<{ version_number: number }>>(
+          `/projects/${opts.workspace}/${opts.slug}/versions`,
+        );
+        if (versions.length === 0) fail("project has no versions");
+        versionNumber = Math.max(...versions.map((v) => v.version_number));
+      }
+      const ver = await client.get<{
+        source_content: string;
+        content_type: string;
+      }>(`/projects/${opts.workspace}/${opts.slug}/versions/${versionNumber}`);
+
+      const outDir = resolve(opts.out);
+      const assetsDir = join(outDir, "assets");
+      let content = ver.source_content;
+      const ids = extractAssetIds(content);
+      if (ids.length > 0) mkdirSync(assetsDir, { recursive: true });
+      for (const id of ids) {
+        const { data, contentType } = await client.getBytes(`/assets/${id}`);
+        const ext = EXT_BY_MIME[contentType] ?? "bin";
+        const rel = join("assets", `${id}.${ext}`);
+        writeFileSync(join(outDir, rel), data);
+        content = replaceRef(content, `pagedrop://asset/${id}`, rel);
+      }
+
+      mkdirSync(outDir, { recursive: true });
+      const ext = ver.content_type === "markdown" ? "md" : "html";
+      const outFile = join(outDir, `${opts.slug}.${ext}`);
+      writeFileSync(outFile, content);
+      process.stdout.write(
+        `Pulled ${opts.slug} v${versionNumber} → ${outFile}` +
+          (ids.length ? ` (+${ids.length} image(s) in ${assetsDir})` : "") +
+          "\n",
+      );
+    } catch (err) {
+      reportApiError(err);
+    }
+  });
+
+const comments = program
+  .command("comments")
+  .description("Read and manage document comments");
+
+comments
+  .command("list")
+  .description("List comments on a project (agent-ready with --json)")
+  .requiredOption("-w, --workspace <slug>", "workspace slug")
+  .requiredOption("-s, --slug <slug>", "project slug")
+  .option("--status <status>", "filter by status: open | resolved")
+  .option("--json", "output raw JSON", false)
+  .action(async (opts) => {
+    try {
+      const q = opts.status ? `?status=${encodeURIComponent(opts.status)}` : "";
+      const list = await clientFromProfile(program.opts().profile).get<CommentResponse[]>(
+        `/projects/${opts.workspace}/${opts.slug}/comments${q}`,
+      );
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(list, null, 2) + "\n");
+        return;
+      }
+      if (list.length === 0) {
+        process.stdout.write("(no comments)\n");
+        return;
+      }
+      for (const c of list) {
+        const kind = c.thread_root_id ? "  ↳ reply" : `[${c.status}]`;
+        const quote = c.anchor_quote ? ` on “${c.anchor_quote}”` : "";
+        process.stdout.write(
+          `${kind} ${c.id}\t${c.author_display ?? "?"}${quote}\n    ${c.body}\n`,
+        );
+      }
+    } catch (err) {
+      reportApiError(err);
+    }
+  });
+
+comments
+  .command("reply")
+  .description("Reply to a comment thread")
+  .argument("<comment_id>", "the root comment id to reply to")
+  .argument("<body>", "reply text")
+  .requiredOption("-w, --workspace <slug>", "workspace slug")
+  .requiredOption("-s, --slug <slug>", "project slug")
+  .action(async (commentId, body, opts) => {
+    try {
+      const res = await clientFromProfile(program.opts().profile).post<CommentResponse>(
+        `/projects/${opts.workspace}/${opts.slug}/comments`,
+        { body, thread_root_id: commentId },
+      );
+      process.stdout.write(`Replied (${res.id}).\n`);
+    } catch (err) {
+      reportApiError(err);
+    }
+  });
+
+for (const verb of ["resolve", "reopen"] as const) {
+  comments
+    .command(verb)
+    .description(`Mark a comment thread as ${verb === "resolve" ? "resolved" : "open"}`)
+    .argument("<comment_id>", "the root comment id")
+    .action(async (commentId) => {
+      try {
+        const res = await clientFromProfile(program.opts().profile).post<CommentResponse>(
+          `/comments/${commentId}/${verb}`,
+        );
+        process.stdout.write(`Comment ${res.id} is now ${res.status}.\n`);
+      } catch (err) {
+        reportApiError(err);
+      }
+    });
+}
 
 program.parseAsync(process.argv).catch((err) => reportApiError(err));

@@ -7,9 +7,12 @@ from app.main import app
 
 
 def _register(client, email):
+    from tests.conftest import issue_register_code
+
+    code = issue_register_code(email)
     return client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": "password123", "name": "T"},
+        json={"email": email, "password": "password123", "name": "T", "code": code},
     )
 
 

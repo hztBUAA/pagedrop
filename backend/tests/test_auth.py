@@ -1,8 +1,46 @@
+from tests.conftest import issue_register_code as _issue_code
+
+
 def register(client, email, password="password123", name=None):
+    code = _issue_code(email, "register")
     return client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": password, "name": name},
+        json={"email": email, "password": password, "name": name, "code": code},
     )
+
+
+def test_register_requires_valid_code(client):
+    resp = client.post(
+        "/api/v1/auth/register",
+        json={"email": "nocode@example.com", "password": "password123", "code": "000000"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "invalid_code"
+
+
+def test_reset_password_flow(client):
+    register(client, "reset@example.com", password="oldpass123")
+    client.post("/api/v1/auth/logout")
+
+    code = _issue_code("reset@example.com", "reset")
+    resp = client.post(
+        "/api/v1/auth/reset-password",
+        json={"email": "reset@example.com", "code": code, "new_password": "newpass456"},
+    )
+    assert resp.status_code == 200
+    client.post("/api/v1/auth/logout")
+
+    # old password rejected, new password works
+    bad = client.post(
+        "/api/v1/auth/login",
+        json={"email": "reset@example.com", "password": "oldpass123"},
+    )
+    assert bad.status_code == 401
+    ok = client.post(
+        "/api/v1/auth/login",
+        json={"email": "reset@example.com", "password": "newpass456"},
+    )
+    assert ok.status_code == 200
 
 
 def test_register_creates_user_and_personal_workspace(client):

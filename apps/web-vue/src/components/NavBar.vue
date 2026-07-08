@@ -68,6 +68,9 @@ function onSwitchWorkspace(e: Event) {
         <router-link :to="{ name: 'tokens' }" class="btn btn-sm" @click="open = false">
           Tokens
         </router-link>
+        <router-link :to="{ name: 'about' }" class="btn btn-sm" @click="open = false">
+          About
+        </router-link>
         <button class="btn btn-sm" @click="onLogout">Logout</button>
       </nav>
     </div>

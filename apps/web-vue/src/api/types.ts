@@ -142,3 +142,33 @@ export interface SecretFinding {
   preview: string;
   line: number;
 }
+
+export interface Asset {
+  id: string;
+  workspace_id: string;
+  project_id: string | null;
+  sha256: string;
+  content_type: string;
+  byte_size: number;
+  width: number | null;
+  height: number | null;
+  original_name: string | null;
+  created_at: string;
+  ref: string;
+}
+
+export interface Comment {
+  id: string;
+  project_id: string;
+  thread_root_id: string | null;
+  anchor_version_number: number | null;
+  anchor_quote: string | null;
+  anchor_prefix: string | null;
+  anchor_suffix: string | null;
+  body: string;
+  status: string;
+  author_source: string;
+  author_display: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}

@@ -1,4 +1,7 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -10,7 +13,7 @@ from app.models.user import User
 from app.permissions import service as perms
 from app.schemas.public import PublicPage
 from app.schemas.share_link import SharePasswordVerify
-from app.services import project_service, share_link_service
+from app.services import asset_service, project_service, share_link_service
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -114,3 +117,25 @@ def verify_share_password(
         raise HTTPException(status_code=403, detail="invalid_password")
     project = db.get(Project, link.project_id)
     return _share_page(db, link, project)
+
+
+@router.get("/assets/{asset_id}")
+def public_asset(
+    asset_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    asset = asset_service.get_asset(db, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    # Only assets belonging to a viewable project are served without a token.
+    if asset.project_id is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    project = db.get(Project, asset.project_id)
+    if project is None or not perms.can_view_project(db, user, project):
+        raise HTTPException(status_code=404, detail="not_found")
+    return Response(
+        content=asset_service.read_bytes(asset),
+        media_type=asset.content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

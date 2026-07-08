@@ -10,9 +10,8 @@ const ws = useWorkspaceStore();
 const router = useRouter();
 
 const email = ref("");
-const password = ref("");
-const name = ref("");
 const code = ref("");
+const newPassword = ref("");
 const error = ref("");
 const notice = ref("");
 const busy = ref(false);
@@ -41,15 +40,12 @@ async function sendCode() {
   }
   sendingCode.value = true;
   try {
-    await auth.requestCode(email.value, "register");
-    notice.value = "Verification code sent — check your inbox.";
+    await auth.requestCode(email.value, "reset");
+    notice.value = "If that email has an account, a reset code was sent.";
     startCooldown();
   } catch (e) {
-    if (e instanceof ApiRequestError) {
-      if (e.status === 409) error.value = "That email is already registered.";
-      else if (e.status === 429) error.value = "Please wait before requesting another code.";
-      else if (e.status === 500) error.value = "Failed to send email. Check the address and retry.";
-      else error.value = "Failed to send code.";
+    if (e instanceof ApiRequestError && e.status === 429) {
+      error.value = "Please wait before requesting another code.";
     } else {
       error.value = "Failed to send code.";
     }
@@ -60,27 +56,26 @@ async function sendCode() {
 
 async function submit() {
   error.value = "";
-  if (password.value.length < 8) {
-    error.value = "Password must be at least 8 characters.";
-    return;
-  }
   if (!code.value) {
     error.value = "Enter the verification code sent to your email.";
     return;
   }
+  if (newPassword.value.length < 8) {
+    error.value = "Password must be at least 8 characters.";
+    return;
+  }
   busy.value = true;
   try {
-    await auth.register(email.value, password.value, code.value, name.value || undefined);
+    await auth.resetPassword(email.value, code.value, newPassword.value);
     await ws.load();
     router.push({ name: "dashboard" });
   } catch (e) {
     if (e instanceof ApiRequestError) {
       if (e.status === 400) error.value = "Invalid or expired verification code.";
-      else if (e.status === 409) error.value = "That email is already registered.";
       else if (e.status === 429) error.value = "Too many attempts. Try again shortly.";
-      else error.value = "Registration failed.";
+      else error.value = "Password reset failed.";
     } else {
-      error.value = "Registration failed.";
+      error.value = "Password reset failed.";
     }
   } finally {
     busy.value = false;
@@ -91,11 +86,7 @@ async function submit() {
 <template>
   <div class="auth-wrap">
     <form class="card auth-card" @submit.prevent="submit">
-      <h1>Create account</h1>
-      <div class="field">
-        <label>Name (optional)</label>
-        <input v-model="name" class="input" type="text" autocomplete="name" />
-      </div>
+      <h1>Reset password</h1>
       <div class="field">
         <label>Email</label>
         <div class="row">
@@ -129,9 +120,9 @@ async function submit() {
         />
       </div>
       <div class="field">
-        <label>Password</label>
+        <label>New password</label>
         <input
-          v-model="password"
+          v-model="newPassword"
           class="input"
           type="password"
           autocomplete="new-password"
@@ -141,10 +132,10 @@ async function submit() {
       <p v-if="notice" class="muted" style="color: var(--success)">{{ notice }}</p>
       <p v-if="error" class="error">{{ error }}</p>
       <button class="btn btn-primary" style="width: 100%" :disabled="busy" type="submit">
-        {{ busy ? "Creating…" : "Create account" }}
+        {{ busy ? "Resetting…" : "Reset password" }}
       </button>
       <p class="muted" style="margin-top: 1rem; text-align: center">
-        Have an account? <router-link :to="{ name: 'login' }">Sign in</router-link>
+        Remembered it? <router-link :to="{ name: 'login' }">Sign in</router-link>
       </p>
     </form>
   </div>

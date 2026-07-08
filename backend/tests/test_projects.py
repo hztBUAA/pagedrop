@@ -7,9 +7,12 @@ from app.main import app
 
 
 def _register(client, email, name="User"):
+    from tests.conftest import issue_register_code
+
+    code = issue_register_code(email)
     return client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": "password123", "name": name},
+        json={"email": email, "password": "password123", "name": name, "code": code},
     )
 
 
@@ -87,6 +90,23 @@ def test_safe_html_sanitized(owner_client):
     ).json()
     assert "<script>" not in (ver["rendered_html"] or "")
     assert "ok" in ver["rendered_html"]
+
+
+def test_safe_html_keeps_pagedrop_asset_scheme(owner_client):
+    # The pagedrop:// image scheme must survive sanitization so the frontend
+    # can resolve it to a real asset URL; javascript: must still be stripped.
+    _publish(
+        owner_client,
+        slug="imghtml",
+        content='<img src="pagedrop://asset/abc123de"><img src="javascript:alert(1)">',
+        content_type="safe_html",
+    )
+    ver = owner_client.get(
+        f"/api/v1/projects/{owner_client.workspace_slug}/imghtml/versions/1"
+    ).json()
+    html = ver["rendered_html"] or ""
+    assert "pagedrop://asset/abc123de" in html
+    assert "javascript:" not in html
 
 
 def test_secret_scan_blocks_publish(owner_client):

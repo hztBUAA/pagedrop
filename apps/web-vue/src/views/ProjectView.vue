@@ -7,12 +7,13 @@ import type { Project, Version, VersionSummary } from "@/api/types";
 import PageRenderer from "@/components/PageRenderer.vue";
 import ProjectSettings from "@/components/ProjectSettings.vue";
 import ShareLinks from "@/components/ShareLinks.vue";
+import CommentsPanel from "@/components/CommentsPanel.vue";
 
 const route = useRoute();
 const wsSlug = computed(() => route.params.ws as string);
 const projectSlug = computed(() => route.params.slug as string);
 
-type Tab = "view" | "history" | "settings" | "share";
+type Tab = "view" | "history" | "comments" | "settings" | "share";
 const tab = ref<Tab>("view");
 
 // Mobile: collapse the slug/visibility line so the tabs + content sit higher.
@@ -96,6 +97,7 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
         <button :class="{ on: tab === 'history' }" @click="tab = 'history'">
           History ({{ versions.length }})
         </button>
+        <button :class="{ on: tab === 'comments' }" @click="tab = 'comments'">Comments</button>
         <button :class="{ on: tab === 'share' }" @click="tab = 'share'">Share</button>
         <button :class="{ on: tab === 'settings' }" @click="tab = 'settings'">Settings</button>
       </nav>
@@ -133,6 +135,10 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
             </div>
           </div>
         </button>
+      </section>
+
+      <section v-show="tab === 'comments'" class="comments-wrap">
+        <CommentsPanel :ws="wsSlug" :slug="projectSlug" />
       </section>
 
       <section v-show="tab === 'share'">

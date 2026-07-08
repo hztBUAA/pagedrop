@@ -21,8 +21,16 @@ export const useAuthStore = defineStore("auth", () => {
     user.value = await authApi.login(email, password);
   }
 
-  async function register(email: string, password: string, name?: string) {
-    user.value = await authApi.register(email, password, name);
+  async function requestCode(email: string, purpose: "register" | "reset" = "register") {
+    await authApi.requestCode(email, purpose);
+  }
+
+  async function register(email: string, password: string, code: string, name?: string) {
+    user.value = await authApi.register(email, password, code, name);
+  }
+
+  async function resetPassword(email: string, code: string, newPassword: string) {
+    user.value = await authApi.resetPassword(email, code, newPassword);
   }
 
   async function logout() {
@@ -30,5 +38,5 @@ export const useAuthStore = defineStore("auth", () => {
     user.value = null;
   }
 
-  return { user, ready, fetchMe, login, register, logout };
+  return { user, ready, fetchMe, login, requestCode, register, resetPassword, logout };
 });

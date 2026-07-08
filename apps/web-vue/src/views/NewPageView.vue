@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { projectApi } from "@/api";
+import { assetApi, projectApi } from "@/api";
 import { ApiRequestError } from "@/api/client";
 import type { SecretFinding } from "@/api/types";
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -13,7 +13,7 @@ const current = computed(() => ws.current());
 const slug = ref("");
 const title = ref("");
 const contentType = ref("markdown");
-const visibility = ref("unlisted");
+const visibility = ref("private");
 const content = ref("");
 const message = ref("");
 const force = ref(false);
@@ -22,8 +22,41 @@ const busy = ref(false);
 const error = ref("");
 const findings = ref<SecretFinding[]>([]);
 
+const fileInput = ref<HTMLInputElement | null>(null);
+const uploading = ref(false);
+
 const contentTypes = ["markdown", "safe_html", "sandbox_html"];
 const visibilities = ["public", "unlisted", "private"];
+
+function insertRef(assetRef: string, name: string) {
+  const snippet =
+    contentType.value === "markdown"
+      ? `![${name}](${assetRef})`
+      : `<img src="${assetRef}" alt="${name}" />`;
+  content.value += (content.value && !content.value.endsWith("\n") ? "\n" : "") + snippet + "\n";
+}
+
+async function onFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !current.value) return;
+  uploading.value = true;
+  error.value = "";
+  try {
+    const asset = await assetApi.upload(
+      current.value.slug,
+      slug.value.trim() || null,
+      file,
+    );
+    insertRef(asset.ref, file.name);
+  } catch (e) {
+    error.value =
+      e instanceof ApiRequestError ? `Image upload failed: ${String(e.detail)}` : "Image upload failed.";
+  } finally {
+    uploading.value = false;
+  }
+}
 
 async function publish() {
   if (!current.value) {
@@ -102,7 +135,19 @@ async function publish() {
       </div>
 
       <div class="field" style="margin: 0">
-        <label>Content</label>
+        <div class="row between" style="align-items: center">
+          <label style="margin: 0">Content</label>
+          <button type="button" class="btn btn-sm" :disabled="uploading" @click="fileInput?.click()">
+            {{ uploading ? "Uploading…" : "Insert image" }}
+          </button>
+          <input
+            ref="fileInput"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            hidden
+            @change="onFilePicked"
+          />
+        </div>
         <textarea v-model="content" class="textarea" required />
       </div>
 

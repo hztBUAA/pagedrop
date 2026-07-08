@@ -30,6 +30,19 @@ class Settings(BaseSettings):
     # CORS — comma-separated list
     cors_origins: str = "http://localhost:5173,http://localhost:5174"
 
+    # Email / SMTP (verification codes). Defaults suit QQ mail over SSL.
+    smtp_host: str = "smtp.qq.com"
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_auth_code: str = ""
+    smtp_from: str = ""
+    verification_code_ttl_seconds: int = 600
+
+    # Asset storage (image hosting). Local disk backend by default; the storage
+    # layer is abstracted so an S3/R2 backend can be added without touching callers.
+    assets_dir: str = "./asset_data"
+    asset_max_bytes: int = 10 * 1024 * 1024  # 10 MB per file
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

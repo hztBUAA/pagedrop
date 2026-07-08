@@ -1,6 +1,8 @@
 import { api } from "./client";
 import type {
   ApiToken,
+  Asset,
+  Comment,
   Member,
   Project,
   PublicPage,
@@ -16,8 +18,12 @@ import type {
 } from "./types";
 
 export const authApi = {
-  register: (email: string, password: string, name?: string) =>
-    api.post<User>("/auth/register", { email, password, name }),
+  requestCode: (email: string, purpose: "register" | "reset" = "register") =>
+    api.post<{ status: string }>("/auth/request-code", { email, purpose }),
+  register: (email: string, password: string, code: string, name?: string) =>
+    api.post<User>("/auth/register", { email, password, code, name }),
+  resetPassword: (email: string, code: string, newPassword: string) =>
+    api.post<User>("/auth/reset-password", { email, code, new_password: newPassword }),
   login: (email: string, password: string) =>
     api.post<User>("/auth/login", { email, password }),
   logout: () => api.post<{ status: string }>("/auth/logout"),
@@ -83,6 +89,38 @@ export const shareApi = {
       payload,
     ),
   revoke: (id: string) => api.del<{ status: string }>(`/share-links/${id}`),
+};
+
+export const assetApi = {
+  upload: (workspaceSlug: string, projectSlug: string | null, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("workspace_slug", workspaceSlug);
+    if (projectSlug) form.append("project_slug", projectSlug);
+    return api.upload<Asset>("/assets", form);
+  },
+};
+
+export const commentApi = {
+  list: (ws: string, slug: string, status?: "open" | "resolved") =>
+    api.get<Comment[]>(
+      `/projects/${ws}/${slug}/comments${status ? `?status=${status}` : ""}`,
+    ),
+  create: (
+    ws: string,
+    slug: string,
+    payload: {
+      body: string;
+      thread_root_id?: string | null;
+      anchor_version_number?: number | null;
+      anchor_quote?: string | null;
+      anchor_prefix?: string | null;
+      anchor_suffix?: string | null;
+    },
+  ) => api.post<Comment>(`/projects/${ws}/${slug}/comments`, payload),
+  resolve: (id: string) => api.post<Comment>(`/comments/${id}/resolve`),
+  reopen: (id: string) => api.post<Comment>(`/comments/${id}/reopen`),
+  del: (id: string) => api.del<{ status: string }>(`/comments/${id}`),
 };
 
 export const publicApi = {

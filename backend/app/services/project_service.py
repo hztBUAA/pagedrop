@@ -11,7 +11,7 @@ from app.models.page_version import (
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.render import service as render_service
-from app.services import secret_scan_service
+from app.services import asset_service, secret_scan_service
 
 
 class SecretDetectedError(Exception):
@@ -138,6 +138,9 @@ def publish(
     # Never overwrite old versions; only advance the latest pointer + title.
     project.latest_version_id = version.id
     project.title = title
+    asset_service.link_referenced_assets(
+        db, workspace_id=workspace.id, project_id=project.id, content=content
+    )
     db.commit()
     db.refresh(project)
     db.refresh(version)

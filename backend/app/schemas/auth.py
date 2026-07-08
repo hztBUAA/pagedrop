@@ -8,6 +8,18 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
     name: str | None = Field(default=None, max_length=200)
+    code: str = Field(min_length=4, max_length=10)
+
+
+class RequestCodeRequest(BaseModel):
+    email: EmailStr
+    purpose: str = "register"
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=10)
+    new_password: str = Field(min_length=8, max_length=200)
 
 
 class LoginRequest(BaseModel):

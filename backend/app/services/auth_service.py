@@ -60,3 +60,13 @@ def authenticate(db: Session, email: str, password: str) -> User:
     if user is None or not verify_password(password, user.password_hash):
         raise AuthError("invalid_credentials")
     return user
+
+
+def set_password(db: Session, email: str, new_password: str) -> User:
+    user = get_user_by_email(db, email)
+    if user is None:
+        raise AuthError("user_not_found")
+    user.password_hash = hash_password(new_password)
+    db.commit()
+    db.refresh(user)
+    return user

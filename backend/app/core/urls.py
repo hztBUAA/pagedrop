@@ -15,3 +15,8 @@ def version_url(workspace_slug: str, project_slug: str, version: int) -> str:
 
 def share_url(share_token: str) -> str:
     return f"{_base()}/share/{share_token}"
+
+
+def asset_ref(asset_id) -> str:
+    """Stable, location-independent reference embedded in content."""
+    return f"pagedrop://asset/{asset_id}"

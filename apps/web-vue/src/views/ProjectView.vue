@@ -15,6 +15,9 @@ const projectSlug = computed(() => route.params.slug as string);
 type Tab = "view" | "history" | "settings" | "share";
 const tab = ref<Tab>("view");
 
+// Mobile: collapse the slug/visibility line so the tabs + content sit higher.
+const detailsOpen = ref(false);
+
 const project = ref<Project | null>(null);
 const versions = ref<VersionSummary[]>([]);
 const active = ref<Version | null>(null);
@@ -60,15 +63,33 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-else-if="project">
-      <div class="row between wrap head">
-        <div>
-          <h1 style="margin: 0 0 0.3rem">{{ project.title }}</h1>
-          <div class="muted slug">
-            <span class="badge" :class="project.visibility">{{ project.visibility }}</span>
-            <router-link :to="publicUrl">{{ publicUrl }}</router-link>
-          </div>
+      <header class="proj-head" :class="{ open: detailsOpen }">
+        <div class="proj-bar">
+          <h1 class="proj-title">{{ project.title }}</h1>
+          <button
+            type="button"
+            class="proj-toggle"
+            :aria-expanded="detailsOpen"
+            aria-label="Toggle details"
+            @click="detailsOpen = !detailsOpen"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                d="M6 9l6 6 6-6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
         </div>
-      </div>
+        <div class="proj-details muted">
+          <span class="badge" :class="project.visibility">{{ project.visibility }}</span>
+          <router-link :to="publicUrl">{{ publicUrl }}</router-link>
+        </div>
+      </header>
 
       <nav class="tabs">
         <button :class="{ on: tab === 'view' }" @click="tab = 'view'">View</button>
@@ -126,14 +147,42 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
 </template>
 
 <style scoped>
-.head {
-  margin-bottom: 1rem;
+.proj-head {
+  margin-bottom: 0.85rem;
 }
-.slug {
+.proj-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.proj-title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+.proj-toggle {
+  display: none;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  padding: 0;
+  transition: transform 0.2s ease;
+}
+.proj-details {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.85rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
 }
 .tabs {
   display: flex;
@@ -157,6 +206,10 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
 .version-meta {
   font-size: 0.82rem;
   margin-bottom: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
 }
 .version-row {
   color: var(--text);
@@ -166,5 +219,36 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
 }
 .version-row:hover {
   border-color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .proj-head {
+    margin-bottom: 0.6rem;
+  }
+  .proj-title {
+    font-size: 1.15rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .proj-toggle {
+    display: inline-flex;
+  }
+  .proj-head.open .proj-toggle {
+    transform: rotate(180deg);
+  }
+  .proj-details {
+    display: none;
+  }
+  .proj-head.open .proj-details {
+    display: flex;
+  }
+  .tabs {
+    margin-bottom: 0.75rem;
+  }
+  .tabs button {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.9rem;
+  }
 }
 </style>

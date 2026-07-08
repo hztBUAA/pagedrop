@@ -28,6 +28,11 @@ export const authApi = {
     api.post<User>("/auth/login", { email, password }),
   logout: () => api.post<{ status: string }>("/auth/logout"),
   me: () => api.get<User>("/auth/me"),
+  oauthProviders: () => api.get<{ providers: string[] }>("/auth/oauth/providers"),
+  oauthStart: (provider: string) =>
+    api.get<{ authorize_url: string }>(`/auth/oauth/${provider}/start`),
+  oauthCallback: (code: string, state: string) =>
+    api.post<User>("/auth/oauth/callback", { code, state }),
 };
 
 export const workspaceApi = {

@@ -38,5 +38,19 @@ export const useAuthStore = defineStore("auth", () => {
     user.value = null;
   }
 
-  return { user, ready, fetchMe, login, requestCode, register, resetPassword, logout };
+  async function completeOAuth(code: string, state: string) {
+    user.value = await authApi.oauthCallback(code, state);
+  }
+
+  return {
+    user,
+    ready,
+    fetchMe,
+    login,
+    requestCode,
+    register,
+    resetPassword,
+    logout,
+    completeOAuth,
+  };
 });

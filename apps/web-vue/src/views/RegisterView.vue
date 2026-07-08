@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { ApiRequestError } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
 import { useWorkspaceStore } from "@/stores/workspace";
+import OAuthButtons from "@/components/OAuthButtons.vue";
 
 const auth = useAuthStore();
 const ws = useWorkspaceStore();
@@ -143,6 +144,7 @@ async function submit() {
       <button class="btn btn-primary" style="width: 100%" :disabled="busy" type="submit">
         {{ busy ? "Creating…" : "Create account" }}
       </button>
+      <OAuthButtons />
       <p class="muted" style="margin-top: 1rem; text-align: center">
         Have an account? <router-link :to="{ name: 'login' }">Sign in</router-link>
       </p>

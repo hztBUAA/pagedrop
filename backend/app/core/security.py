@@ -43,6 +43,32 @@ def decode_access_token(token: str) -> dict | None:
         return None
 
 
+# --- Signed OAuth state (CSRF + PKCE carrier) ---
+_OAUTH_STATE_PURPOSE = "oauth_state"
+
+
+def sign_oauth_state(payload: dict) -> str:
+    """Sign a short-lived OAuth state blob (provider, nonce, PKCE verifier)."""
+    now = datetime.now(timezone.utc)
+    body = {
+        **payload,
+        "purpose": _OAUTH_STATE_PURPOSE,
+        "iat": now,
+        "exp": now + timedelta(seconds=settings.oauth_state_ttl_seconds),
+    }
+    return jwt.encode(body, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def verify_oauth_state(token: str) -> dict | None:
+    try:
+        claims = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError:
+        return None
+    if claims.get("purpose") != _OAUTH_STATE_PURPOSE:
+        return None
+    return claims
+
+
 # --- Opaque tokens (API tokens, share tokens) ---
 def generate_token(prefix: str) -> str:
     """Return a plaintext opaque token like ``pd_live_<random>``."""

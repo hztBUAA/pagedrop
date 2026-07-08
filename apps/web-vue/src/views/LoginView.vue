@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ApiRequestError } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
 import { useWorkspaceStore } from "@/stores/workspace";
+import OAuthButtons from "@/components/OAuthButtons.vue";
 
 const auth = useAuthStore();
 const ws = useWorkspaceStore();
@@ -58,6 +59,7 @@ async function submit() {
       <button class="btn btn-primary" style="width: 100%" :disabled="busy" type="submit">
         {{ busy ? "Signing in…" : "Sign in" }}
       </button>
+      <OAuthButtons :redirect="(route.query.redirect as string | undefined)" />
       <p class="muted" style="margin-top: 1rem; text-align: center">
         No account? <router-link :to="{ name: 'register' }">Register</router-link>
         · <router-link :to="{ name: 'reset-password' }">Forgot password?</router-link>

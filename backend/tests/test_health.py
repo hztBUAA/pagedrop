@@ -22,4 +22,5 @@ def test_all_tables_registered():
         "verification_codes",
         "assets",
         "comments",
+        "oauth_identities",
     }

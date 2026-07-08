@@ -2,6 +2,7 @@ from app.models.api_token import ApiToken
 from app.models.asset import Asset
 from app.models.audit_log import AuditLog
 from app.models.comment import Comment
+from app.models.oauth_identity import OAuthIdentity
 from app.models.page_version import PageVersion
 from app.models.project import Project
 from app.models.share_link import ShareLink
@@ -14,6 +15,7 @@ __all__ = [
     "Asset",
     "AuditLog",
     "Comment",
+    "OAuthIdentity",
     "PageVersion",
     "Project",
     "ShareLink",

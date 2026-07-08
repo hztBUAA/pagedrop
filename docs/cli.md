@@ -20,23 +20,72 @@ To use it as a global `pagedrop` command, link it: `pnpm link --global` (or
 
 ## Authentication
 
-1. In the PageDrop web app, create an API token scoped to the workspace and
-   projects the agent should touch. Grant only the scopes it needs:
-   - `versions:write` — publish new versions (required for `publish`)
-   - `versions:read` / `projects:read` — `versions`, `info`, `pull`
-   - `assets:write` — upload images referenced by published content
-   - `comments:read` / `comments:write` — `comments list` / `reply`, `resolve`, `reopen`
-   - `share_links:create` — `share`
-2. Log in with the token; the CLI verifies it against `/auth/whoami` and stores
-   it at `~/.pagedrop/config.json` (mode `0600`).
+You can authenticate entirely from the terminal — no web GUI required. Every
+`register` / `login` / `auth github` command finishes by minting a **scoped API
+token** and storing it at `~/.pagedrop/config.json` (mode `0600`), so the agent is
+publish-ready in one step. The default scopes granted cover the full publish
+workflow: `versions:write`, `versions:read`, `projects:read`, `assets:write`,
+`share_links:create`, `comments:read`, `comments:write`.
+
+Flags always win; on an interactive terminal any missing required value is
+prompted. In a non-interactive (agent) context, pass the values as flags.
+
+### Create an account (email + verification code)
+
+```bash
+# 1) request a code (an email is sent); or omit --code on a TTY to be prompted
+pagedrop register --email you@example.com --generate-password --display-name "You"
+# 2) complete with the 6-digit code from the email
+pagedrop register --email you@example.com --code 123456 --generate-password
+```
+
+`--generate-password` creates and prints a strong password once (save it for web
+login); otherwise pass `--password` or get prompted. A personal workspace is
+auto-created and the minted token is scoped to it (override with `--workspace`).
+
+### Log in with an existing account (email + password)
+
+```bash
+pagedrop login --email you@example.com --password s3cret -u https://pagedrop.justinhuang.top
+```
+
+### Log in with GitHub (OAuth device flow)
+
+```bash
+pagedrop auth github --client-id <github_oauth_app_client_id>
+# or set PAGEDROP_GITHUB_CLIENT_ID
+```
+
+Prints a short user code and a `github.com` URL; open it, enter the code, and the
+CLI mints your token. The `client_id` is a public value from a GitHub OAuth App
+with **Device Flow** enabled — no client secret is needed. Use `--no-browser` to
+skip auto-opening a browser (headless/agent environments).
+
+> The **web app** additionally supports one-click "Continue with GitHub / Google"
+> sign-in (OAuth authorization-code flow) on its login and register pages; the CLI
+> uses the device flow above.
+
+### Use a pre-provisioned token
+
+If a token was already created (e.g. via the web app or another `register`), store
+it directly:
 
 ```bash
 pagedrop login --token pd_live_xxx --url https://pagedrop.justinhuang.top
 ```
 
 The token plaintext is shown by the server only once at creation time — store it
-securely. The CLI keeps it locally in the config file with owner-only
-permissions.
+securely. The CLI keeps it locally in the config file with owner-only permissions.
+
+### Manage tokens in the web app
+
+To create, list, or revoke tokens in a browser, sign in at the base URL with the
+same account and open the Tokens page for your workspace. Available scopes:
+   - `versions:write` — publish new versions (required for `publish`)
+   - `versions:read` / `projects:read` — `versions`, `info`, `pull`
+   - `assets:write` — upload images referenced by published content
+   - `comments:read` / `comments:write` — `comments list` / `reply`, `resolve`, `reopen`
+   - `share_links:create` — `share`
 
 ### Environment variables (CI / ephemeral use)
 

@@ -5,6 +5,13 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { Command } from "commander";
 
 import { ApiClient, ApiError } from "./api.js";
+import {
+  GITHUB_CLIENT_ID,
+  githubDeviceFlow,
+  mintTokenAndStore,
+  randomPassword,
+  resolveValue,
+} from "./auth.js";
 import { resolveProfile, upsertProfile, configPath, type Profile } from "./config.js";
 import {
   EXT_BY_MIME,
@@ -139,32 +146,158 @@ program
 
 program
   .command("login")
-  .description("Store an API token and verify it against the server")
-  .requiredOption("-t, --token <token>", "PageDrop API token (pd_live_...)")
+  .description("Log in and store a credential. With --token, stores an existing API token; with --email, logs in with a password and mints a scoped token.")
+  .option("-t, --token <token>", "existing PageDrop API token (pd_live_...)")
+  .option("-e, --email <email>", "account email (password login → auto-mint token)")
+  .option("--password <password>", "account password (prompted if omitted on a TTY)")
+  .option("-w, --workspace <slug>", "workspace to scope the minted token to")
+  .option("--token-name <name>", "name for the minted token", "cli")
   .option("-u, --url <url>", "server base URL", DEFAULT_URL)
   .option("-n, --name <name>", "profile name", "default")
   .action(async (opts) => {
-    const client = new ApiClient(opts.url, opts.token);
-    let who: Whoami;
+    // Mode 1: store an existing API token (original behavior).
+    if (opts.token) {
+      const client = new ApiClient(opts.url, opts.token);
+      let who: Whoami;
+      try {
+        who = await client.get<Whoami>("/auth/whoami");
+      } catch (err) {
+        reportApiError(err);
+      }
+      if (who.type !== "token") {
+        fail("that credential is not an API token");
+      }
+      const profile: Profile = {
+        baseUrl: opts.url,
+        token: opts.token,
+        workspace: who.workspace_id ?? undefined,
+      };
+      upsertProfile(opts.name, profile);
+      process.stdout.write(
+        `Logged in as token "${who.token_name ?? who.token_id}" ` +
+          `(scopes: ${who.scopes.join(", ") || "none"}).\n` +
+          `Saved to profile "${opts.name}" at ${configPath()}.\n`,
+      );
+      return;
+    }
+
+    // Mode 2: email + password → session → mint token.
     try {
-      who = await client.get<Whoami>("/auth/whoami");
+      const email = await resolveValue(
+        opts.email,
+        "Email: ",
+        "provide --email (or --token for an existing token)",
+      );
+      const password = await resolveValue(
+        opts.password,
+        "Password: ",
+        "provide --password (or run on a terminal to be prompted)",
+        true,
+      );
+      const client = new ApiClient(opts.url, "");
+      await client.post("/auth/login", { email, password });
+      if (!client.hasSession()) fail("login did not establish a session");
+      await mintTokenAndStore(client, {
+        baseUrl: opts.url,
+        workspaceSlug: opts.workspace,
+        tokenName: opts.tokenName,
+        profileName: opts.name,
+      });
     } catch (err) {
       reportApiError(err);
     }
-    if (who.type !== "token") {
-      fail("that credential is not an API token");
+  });
+
+program
+  .command("register")
+  .description("Create a PageDrop account from the terminal (email verification code) and mint a scoped token.")
+  .requiredOption("-e, --email <email>", "account email")
+  .option("--code <code>", "email verification code (omit to request one)")
+  .option("--password <password>", "account password (prompted/generated if omitted)")
+  .option("--generate-password", "generate a strong random password and print it once", false)
+  .option("--display-name <name>", "display name for the account")
+  .option("-w, --workspace <slug>", "workspace to scope the minted token to")
+  .option("--token-name <name>", "name for the minted token", "cli")
+  .option("-u, --url <url>", "server base URL", DEFAULT_URL)
+  .option("-n, --name <name>", "profile name", "default")
+  .action(async (opts) => {
+    try {
+      const client = new ApiClient(opts.url, "");
+
+      // Step 1: no code yet → request one by email.
+      if (!opts.code) {
+        await client.post("/auth/request-code", { email: opts.email, purpose: "register" });
+        if (!process.stdin.isTTY) {
+          process.stdout.write(
+            `A verification code was emailed to ${opts.email}.\n` +
+              `Re-run with the code:  pagedrop register --email ${opts.email} --code <CODE> [--generate-password]\n`,
+          );
+          return;
+        }
+        process.stdout.write(`A verification code was emailed to ${opts.email}.\n`);
+        opts.code = await resolveValue(undefined, "Verification code: ", "verification code required");
+      }
+
+      // Step 2: resolve a password.
+      let password: string = opts.password;
+      if (!password && opts.generatePassword) {
+        password = randomPassword();
+        process.stdout.write(`Generated password (store it, needed for web login): ${password}\n`);
+      }
+      if (!password) {
+        password = await resolveValue(
+          undefined,
+          "Choose a password (min 8 chars): ",
+          "provide --password or --generate-password",
+          true,
+        );
+      }
+
+      // Step 3: register (sets session cookie) → mint token.
+      await client.post("/auth/register", {
+        email: opts.email,
+        password,
+        code: opts.code,
+        name: opts.displayName ?? null,
+      });
+      if (!client.hasSession()) fail("registration did not establish a session");
+      await mintTokenAndStore(client, {
+        baseUrl: opts.url,
+        workspaceSlug: opts.workspace,
+        tokenName: opts.tokenName,
+        profileName: opts.name,
+      });
+    } catch (err) {
+      reportApiError(err);
     }
-    const profile: Profile = {
-      baseUrl: opts.url,
-      token: opts.token,
-      workspace: who.workspace_id ?? undefined,
-    };
-    upsertProfile(opts.name, profile);
-    process.stdout.write(
-      `Logged in as token "${who.token_name ?? who.token_id}" ` +
-        `(scopes: ${who.scopes.join(", ") || "none"}).\n` +
-        `Saved to profile "${opts.name}" at ${configPath()}.\n`,
-    );
+  });
+
+const auth = program.command("auth").description("Authenticate via an identity provider");
+
+auth
+  .command("github")
+  .description("Log in with GitHub (OAuth device flow) and mint a scoped token — no browser typing of passwords.")
+  .option("--client-id <id>", "GitHub OAuth App client_id", GITHUB_CLIENT_ID)
+  .option("--no-browser", "do not attempt to open a browser automatically")
+  .option("-w, --workspace <slug>", "workspace to scope the minted token to")
+  .option("--token-name <name>", "name for the minted token", "cli")
+  .option("-u, --url <url>", "server base URL", DEFAULT_URL)
+  .option("-n, --name <name>", "profile name", "default")
+  .action(async (opts) => {
+    try {
+      const githubToken = await githubDeviceFlow(opts.clientId, opts.browser !== false);
+      const client = new ApiClient(opts.url, "");
+      await client.post("/auth/github", { access_token: githubToken });
+      if (!client.hasSession()) fail("GitHub login did not establish a session");
+      await mintTokenAndStore(client, {
+        baseUrl: opts.url,
+        workspaceSlug: opts.workspace,
+        tokenName: opts.tokenName,
+        profileName: opts.name,
+      });
+    } catch (err) {
+      reportApiError(err);
+    }
   });
 
 program

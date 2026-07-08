@@ -43,9 +43,36 @@ class Settings(BaseSettings):
     assets_dir: str = "./asset_data"
     asset_max_bytes: int = 10 * 1024 * 1024  # 10 MB per file
 
+    # GitHub OAuth (device flow). The CLI drives the flow with a public client_id;
+    # the backend only verifies the resulting access token against this API base.
+    github_api_base: str = "https://api.github.com"
+
+    # OAuth providers (web authorization-code flow). Leave a provider's client_id
+    # and client_secret blank to disable it (the UI auto-hides disabled providers).
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Overridable provider bases so tests can point at a stub server.
+    github_oauth_base: str = "https://github.com"
+    google_oauth_base: str = "https://oauth2.googleapis.com"
+    google_authorize_base: str = "https://accounts.google.com"
+    google_userinfo_url: str = "https://openidconnect.googleapis.com/v1/userinfo"
+    # Signed OAuth state (CSRF + PKCE) lifetime.
+    oauth_state_ttl_seconds: int = 600
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def oauth_redirect_uri(self) -> str:
+        """Redirect URI the browser is sent back to after provider consent.
+
+        Must match the callback registered with each OAuth provider and the
+        frontend `/auth/callback` route.
+        """
+        return f"{self.app_base_url.rstrip('/')}/auth/callback"
 
 
 @lru_cache

@@ -16,19 +16,40 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
+  private sessionCookie: string | null = null;
+
   constructor(
     private readonly baseUrl: string,
     private readonly token: string,
   ) {}
+
+  /** Whether a session cookie was captured from a prior login/register response. */
+  hasSession(): boolean {
+    return this.sessionCookie !== null;
+  }
 
   private url(path: string): string {
     const base = this.baseUrl.replace(/\/+$/, "");
     return `${base}/api/v1${path}`;
   }
 
+  private captureCookies(resp: Response): void {
+    const getSetCookie = (resp.headers as { getSetCookie?: () => string[] }).getSetCookie;
+    const raw = getSetCookie ? getSetCookie.call(resp.headers) : [];
+    const single = resp.headers.get("set-cookie");
+    const cookies = raw.length ? raw : single ? [single] : [];
+    for (const c of cookies) {
+      const pair = c.split(";")[0]?.trim();
+      if (pair && pair.startsWith("pd_session=")) {
+        this.sessionCookie = pair;
+      }
+    }
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    if (this.sessionCookie) headers.Cookie = this.sessionCookie;
     if (body !== undefined) headers["Content-Type"] = "application/json";
 
     let resp: Response;
@@ -42,6 +63,7 @@ export class ApiClient {
       throw new ApiError(0, `network error: ${(err as Error).message}`);
     }
 
+    this.captureCookies(resp);
     const text = await resp.text();
     const data = text ? safeJson(text) : null;
     if (!resp.ok) {

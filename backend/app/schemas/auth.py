@@ -27,6 +27,23 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+class GithubAuthRequest(BaseModel):
+    access_token: str = Field(min_length=1, max_length=500)
+
+
+class OAuthCallbackRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=2000)
+    state: str = Field(min_length=1, max_length=200)
+
+
+class OAuthProvidersOut(BaseModel):
+    providers: list[str] = Field(default_factory=list)
+
+
+class OAuthStartOut(BaseModel):
+    authorize_url: str
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

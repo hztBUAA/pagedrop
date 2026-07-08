@@ -10,8 +10,12 @@ class User(UUIDMixin, TimestampMixin, Base):
 
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     name: Mapped[str | None] = mapped_column(String(200))
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # Nullable: OAuth-only accounts (e.g. GitHub/Google) have no local password.
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     memberships = relationship("WorkspaceMember", back_populates="user")
+    oauth_identities = relationship(
+        "OAuthIdentity", back_populates="user", cascade="all, delete-orphan"
+    )

@@ -1,0 +1,87 @@
+# PageDrop
+
+> PageDrop publishes Markdown / HTML / agent artifacts to a safe, versioned,
+> mobile-friendly URL. Built for humans and AI agents. Base URL:
+> https://pagedrop.justinhuang.top — every publish is a new immutable version
+> (content is never overwritten in place).
+
+This file is for AI coding agents (Claude Code, Codex, etc.). It tells you how to
+get a user onboarded and publishing from the command line, with no web GUI.
+
+## What you can do for the user
+
+Configure everything from the terminal: create their account, mint a scoped API
+token, and publish — the user never has to open the web app to get started.
+They can visit the site later in any browser to view or manage what you published.
+
+## Onboarding in 3 steps (all CLI)
+
+1. Install the CLI (Node >= 20). Not yet on npm — install from the monorepo:
+      cd apps/cli && pnpm install && pnpm build && pnpm link --global
+   (this exposes a global `pagedrop` command; `node dist/index.js` also works)
+
+2. Get a credential — pick ONE:
+
+   a) Email + verification code (works everywhere):
+      pagedrop register --email USER@EXAMPLE.COM --generate-password --display-name "NAME"
+      → A 6-digit code is emailed to the user. Ask them for it, then:
+      pagedrop register --email USER@EXAMPLE.COM --code CODE --generate-password
+      (On a real terminal you can omit --code and be prompted. --generate-password
+       prints a strong password once — save it for future web login.)
+
+   b) GitHub (OAuth device flow, no password typing):
+      pagedrop auth github
+      → Prints a short code + a github.com URL. The user opens it and enters the
+        code. Requires a configured client_id: --client-id ID or
+        PAGEDROP_GITHUB_CLIENT_ID.
+
+   c) Existing account, email + password:
+      pagedrop login --email USER@EXAMPLE.COM --password PASS
+
+   Each of these ends by minting a scoped API token and storing it at
+   ~/.pagedrop/config.json (mode 0600). The user is now publish-ready.
+   Token scopes granted: versions:write, versions:read, projects:read,
+   assets:write, share_links:create, comments:read, comments:write.
+
+   Already have a token string? pagedrop login --token pd_live_xxx
+
+   (The web app also offers one-click "Continue with GitHub / Google" sign-in on
+   its login/register pages; the CLI uses the GitHub device flow above.)
+
+3. Publish:
+   pagedrop publish report.md -w WORKSPACE -s SLUG -T "Title"
+   generate_report | pagedrop publish - -w WORKSPACE -s SLUG -T "Title"
+
+   The workspace slug is the user's auto-created personal workspace; `pagedrop
+   whoami` shows the active identity. `publish` prints a `latest:` URL to hand back.
+
+## Command cheat sheet
+
+  pagedrop whoami                              # who the stored credential is
+  pagedrop publish <file|-> -w WS -s SLUG      # publish; .md→markdown, .html→safe_html
+  pagedrop publish ... -v public|unlisted|private   # visibility (default private)
+  pagedrop versions -w WS -s SLUG              # list immutable versions
+  pagedrop info -w WS -s SLUG                  # project metadata
+  pagedrop share -w WS -s SLUG [--password P] [--expires-at ISO8601]
+  pagedrop pull -w WS -s SLUG -o ./out         # download content + images
+  pagedrop comments list -w WS -s SLUG --json  # read reviewer comments
+  pagedrop comments reply <id> "text" -w WS -s SLUG
+
+Publishing scans for secrets and blocks (exit 2) if any are found; use --force
+only for confirmed false positives. Local images in a published file are
+uploaded automatically.
+
+## Telling the user how to view / manage across devices
+
+- The `latest:` URL from `publish` works in any browser on any device — share it directly.
+- Visibility: `public` (anyone with the link, listed), `unlisted` (anyone with the
+  link, not listed), `private` (only the owner/workspace). Default is `private`.
+- For a password-protected or expiring link, use `pagedrop share`.
+- To manage in a browser later, the user signs in at https://pagedrop.justinhuang.top
+  with the same email/password (or GitHub) used above, under their personal workspace.
+
+## More
+
+- CLI reference: docs/cli.md in the repo.
+- HTTP API reference: docs/api.md in the repo.
+- Source: the PageDrop repository (this file lives in apps/web-vue/public/llms.txt).

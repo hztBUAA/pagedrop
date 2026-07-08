@@ -70,14 +70,54 @@ function Content({ payload, onLoaded }: { payload: RenderPayload; onLoaded: () =
   }
 
   // sandbox_html: isolate untrusted markup in a script-disabled iframe.
+  return <SandboxFrame html={payload.sourceContent} onResize={onLoaded} />;
+}
+
+// Untrusted HTML stays script-free (no allow-scripts), but allow-same-origin
+// lets us read its real content height so the frame fits exactly — otherwise a
+// fixed height leaves blank space under short reports or nested-scrolls long ones.
+function SandboxFrame({ html, onResize }: { html: string; onResize: () => void }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
+
+  const sync = useCallback(() => {
+    const frame = ref.current;
+    const doc = frame?.contentDocument;
+    if (!frame || !doc) return;
+    const h = Math.max(
+      doc.documentElement?.scrollHeight ?? 0,
+      doc.body?.scrollHeight ?? 0,
+    );
+    if (h > 0) frame.style.height = `${h}px`;
+    onResize();
+  }, [onResize]);
+
+  const onLoad = useCallback(() => {
+    sync();
+    const doc = ref.current?.contentDocument;
+    roRef.current?.disconnect();
+    if (doc?.body) {
+      const ro = new ResizeObserver(sync);
+      ro.observe(doc.body);
+      roRef.current = ro;
+      // Late reflows: images inside the report finishing loading.
+      doc.querySelectorAll("img").forEach((img) => {
+        if (!img.complete) img.addEventListener("load", sync);
+      });
+    }
+  }, [sync]);
+
+  useEffect(() => () => roRef.current?.disconnect(), []);
+
   return (
     <iframe
+      ref={ref}
       className="pd-sandbox"
-      sandbox=""
+      sandbox="allow-same-origin"
       referrerPolicy="no-referrer"
-      srcDoc={payload.sourceContent}
+      srcDoc={html}
       title="sandboxed content"
-      onLoad={onLoaded}
+      onLoad={onLoad}
     />
   );
 }

@@ -128,7 +128,7 @@ body {
 
 .pd-sandbox {
   width: 100%;
-  min-height: 100dvh;
+  min-height: 200px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;

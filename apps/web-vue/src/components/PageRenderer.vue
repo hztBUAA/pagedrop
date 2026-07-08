@@ -3,11 +3,25 @@ import { onBeforeUnmount, ref, watch } from "vue";
 
 import { assetUrl } from "../api/client";
 
+interface Anchor {
+  id: string;
+  quote: string;
+  prefix: string;
+  suffix: string;
+}
+
 const props = defineProps<{
   contentType: string;
   sourceContent: string;
   renderedHtml: string | null;
   publicView?: boolean;
+  anchors?: Anchor[];
+  focusedAnchorId?: string | null;
+}>();
+
+const emit = defineEmits<{
+  select: [sel: { quote: string; prefix: string; suffix: string } | null];
+  anchorClick: [commentId: string];
 }>();
 
 const ASSET_REF = /pagedrop:\/\/asset\/([0-9a-fA-F-]{8,})/g;
@@ -45,6 +59,24 @@ function send() {
   }
 }
 
+function sendHighlights() {
+  if (ready && frame.value?.contentWindow) {
+    frame.value.contentWindow.postMessage(
+      { type: "highlights", anchors: props.anchors ?? [] },
+      rendererOrigin,
+    );
+  }
+}
+
+function sendFocus() {
+  if (ready && frame.value?.contentWindow) {
+    frame.value.contentWindow.postMessage(
+      { type: "focus-anchor", id: props.focusedAnchorId ?? null },
+      rendererOrigin,
+    );
+  }
+}
+
 function onMessage(e: MessageEvent) {
   if (e.source !== frame.value?.contentWindow) return;
   const data = e.data;
@@ -52,8 +84,18 @@ function onMessage(e: MessageEvent) {
   if (data.type === "ready") {
     ready = true;
     send();
+    sendHighlights();
+    sendFocus();
   } else if (data.type === "height" && typeof data.height === "number") {
     frameHeight.value = Math.max(120, Math.ceil(data.height) + 8);
+  } else if (data.type === "selection") {
+    const quote = typeof data.quote === "string" ? data.quote : "";
+    emit(
+      "select",
+      quote ? { quote, prefix: data.prefix ?? "", suffix: data.suffix ?? "" } : null,
+    );
+  } else if (data.type === "anchor-click" && typeof data.commentId === "string") {
+    emit("anchorClick", data.commentId);
   }
 }
 
@@ -62,6 +104,8 @@ onBeforeUnmount(() => window.removeEventListener("message", onMessage));
 
 // Re-send whenever the content changes (e.g. switching versions).
 watch(() => [props.contentType, props.sourceContent, props.renderedHtml], send);
+watch(() => props.anchors, sendHighlights, { deep: true });
+watch(() => props.focusedAnchorId, sendFocus);
 </script>
 
 <template>

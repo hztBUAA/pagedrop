@@ -1,36 +1,151 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { locateQuote, selectionToAnchor } from "./anchor";
 import {
+  isFocusAnchorMessage,
+  isHighlightsMessage,
   isRenderMessage,
   RENDERER_SOURCE,
-  type HeightMessage,
-  type ReadyMessage,
+  type HighlightAnchor,
+  type OutboundMessage,
   type RenderPayload,
 } from "./protocol";
 
-function postToParent(msg: ReadyMessage | HeightMessage) {
+function postToParent(msg: OutboundMessage) {
   if (window.parent && window.parent !== window) {
     window.parent.postMessage(msg, "*");
   }
+}
+
+// CSS Custom Highlight API: highlight anchored ranges without mutating the
+// React-controlled DOM. Returns null when the browser lacks the API.
+type HighlightCtor = new (...ranges: Range[]) => unknown;
+function highlightApi(): { registry: Map<string, unknown>; Ctor: HighlightCtor } | null {
+  const g = window as unknown as {
+    CSS?: { highlights?: Map<string, unknown> };
+    Highlight?: HighlightCtor;
+  };
+  if (g.CSS?.highlights && g.Highlight) return { registry: g.CSS.highlights, Ctor: g.Highlight };
+  return null;
 }
 
 export default function App() {
   const [payload, setPayload] = useState<RenderPayload | null>(
     (window as unknown as { __PAGEDROP_PAYLOAD__?: RenderPayload }).__PAGEDROP_PAYLOAD__ ?? null,
   );
+  const [anchors, setAnchors] = useState<HighlightAnchor[]>([]);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const rangesRef = useRef<Map<string, Range>>(new Map());
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (isRenderMessage(e.data)) {
         setPayload(e.data.payload);
+      } else if (isHighlightsMessage(e.data)) {
+        setAnchors(e.data.anchors);
+      } else if (isFocusAnchorMessage(e.data)) {
+        setFocusedId(e.data.id);
       }
     }
     window.addEventListener("message", onMessage);
     postToParent({ source: RENDERER_SOURCE, type: "ready" });
     return () => window.removeEventListener("message", onMessage);
   }, []);
+
+  // Selection -> parent. mouseup finalizes a selection (empty = cleared).
+  useEffect(() => {
+    function onMouseUp() {
+      const root = rootRef.current;
+      const sel = window.getSelection();
+      if (!root || !sel) return;
+      const anchor = selectionToAnchor(root, sel);
+      if (anchor) {
+        postToParent({ source: RENDERER_SOURCE, type: "selection", ...anchor });
+      } else {
+        postToParent({ source: RENDERER_SOURCE, type: "selection", quote: "", prefix: "", suffix: "" });
+      }
+    }
+    document.addEventListener("mouseup", onMouseUp);
+    return () => document.removeEventListener("mouseup", onMouseUp);
+  }, []);
+
+  // Click on a highlighted range -> parent (best-effort hit test).
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      const map = rangesRef.current;
+      if (map.size === 0) return;
+      const doc = document as Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null;
+        caretPositionFromPoint?: (
+          x: number,
+          y: number,
+        ) => { offsetNode: Node; offset: number } | null;
+      };
+      let container: Node | null = null;
+      let offset = 0;
+      if (doc.caretRangeFromPoint) {
+        const c = doc.caretRangeFromPoint(e.clientX, e.clientY);
+        if (c) {
+          container = c.startContainer;
+          offset = c.startOffset;
+        }
+      } else if (doc.caretPositionFromPoint) {
+        const pos = doc.caretPositionFromPoint(e.clientX, e.clientY);
+        if (pos) {
+          container = pos.offsetNode;
+          offset = pos.offset;
+        }
+      }
+      if (!container) return;
+      for (const [id, r] of map) {
+        if (r.isPointInRange(container, offset)) {
+          postToParent({ source: RENDERER_SOURCE, type: "anchor-click", commentId: id });
+          return;
+        }
+      }
+    }
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
+
+  // Recompute located ranges and repaint highlights whenever the content or the
+  // anchor set changes. Runs after layout so the DOM text is present.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const api = highlightApi();
+    rangesRef.current = new Map();
+    if (!root || !api) return;
+
+    const rest: Range[] = [];
+    let active: Range | null = null;
+    for (const a of anchors) {
+      const r = locateQuote(root, a.quote, a.prefix, a.suffix);
+      if (!r) continue;
+      rangesRef.current.set(a.id, r);
+      if (a.id === focusedId) active = r;
+      else rest.push(r);
+    }
+
+    api.registry.set("pd-anchor", new api.Ctor(...rest) as never);
+    if (active) {
+      api.registry.set("pd-anchor-active", new api.Ctor(active) as never);
+    } else {
+      api.registry.delete("pd-anchor-active");
+    }
+  }, [payload, anchors, focusedId]);
+
+  // Scroll the focused anchor into view when focus changes.
+  useEffect(() => {
+    if (!focusedId) return;
+    const r = rangesRef.current.get(focusedId);
+    const el =
+      r?.startContainer.nodeType === Node.ELEMENT_NODE
+        ? (r.startContainer as Element)
+        : r?.startContainer.parentElement;
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusedId, anchors, payload]);
 
   const reportHeight = useCallback(() => {
     const h = rootRef.current?.scrollHeight ?? document.body.scrollHeight;

@@ -4,7 +4,25 @@ import { commentApi } from "@/api";
 import { ApiRequestError } from "@/api/client";
 import type { Comment } from "@/api/types";
 
-const props = defineProps<{ ws: string; slug: string }>();
+interface PendingAnchor {
+  quote: string;
+  prefix: string;
+  suffix: string;
+}
+
+const props = defineProps<{
+  ws: string;
+  slug: string;
+  pendingAnchor?: PendingAnchor | null;
+  activeVersion?: number | null;
+  focusedId?: string | null;
+}>();
+
+const emit = defineEmits<{
+  clearAnchor: [];
+  focus: [id: string | null];
+  loaded: [comments: Comment[]];
+}>();
 
 const comments = ref<Comment[]>([]);
 const loading = ref(false);
@@ -27,6 +45,7 @@ async function load() {
   try {
     const status = filter.value === "all" ? undefined : filter.value;
     comments.value = await commentApi.list(props.ws, props.slug, status);
+    emit("loaded", comments.value);
   } catch {
     error.value = "Failed to load comments.";
   } finally {
@@ -39,8 +58,20 @@ async function post() {
   posting.value = true;
   error.value = "";
   try {
-    await commentApi.create(props.ws, props.slug, { body: newBody.value.trim() });
+    const anchor = props.pendingAnchor;
+    await commentApi.create(props.ws, props.slug, {
+      body: newBody.value.trim(),
+      ...(anchor
+        ? {
+            anchor_quote: anchor.quote,
+            anchor_prefix: anchor.prefix,
+            anchor_suffix: anchor.suffix,
+            anchor_version_number: props.activeVersion ?? null,
+          }
+        : {}),
+    });
     newBody.value = "";
+    emit("clearAnchor");
     await load();
   } catch (e) {
     error.value = e instanceof ApiRequestError ? String(e.detail) : "Post failed.";
@@ -79,17 +110,36 @@ async function remove(id: string) {
 
 onMounted(load);
 watch(filter, load);
+watch(
+  () => props.focusedId,
+  (id) => {
+    if (!id) return;
+    requestAnimationFrame(() =>
+      document
+        .getElementById("comment-" + id)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+    );
+  },
+);
 </script>
 
 <template>
   <div class="stack">
     <form class="card stack" @submit.prevent="post">
       <strong>Add a comment</strong>
+      <div v-if="pendingAnchor" class="pending-anchor">
+        <blockquote class="anchor">{{ pendingAnchor.quote }}</blockquote>
+        <button type="button" class="btn btn-sm clear-anchor" @click="emit('clearAnchor')">
+          Clear
+        </button>
+      </div>
       <textarea
         v-model="newBody"
         class="input"
         rows="3"
-        placeholder="Leave feedback on this document…"
+        :placeholder="
+          pendingAnchor ? 'Comment on the selected text…' : 'Leave feedback on this document…'
+        "
       />
       <div>
         <button class="btn btn-primary" :disabled="posting" type="submit">Post</button>
@@ -112,7 +162,14 @@ watch(filter, load);
     <p v-if="loading" class="muted">Loading…</p>
     <p v-else-if="roots.length === 0" class="muted">No comments yet.</p>
 
-    <div v-for="c in roots" :key="c.id" class="card stack thread">
+    <div
+      v-for="c in roots"
+      :id="'comment-' + c.id"
+      :key="c.id"
+      class="card stack thread"
+      :class="{ anchored: !!c.anchor_quote, focused: focusedId === c.id }"
+      @click="c.anchor_quote && emit('focus', c.id)"
+    >
       <div class="row between wrap">
         <div class="grow">
           <div class="c-meta muted">
@@ -133,7 +190,7 @@ watch(filter, load);
         <p class="c-body">{{ r.body }}</p>
       </div>
 
-      <div v-if="replyOpen === c.id" class="stack">
+      <div v-if="replyOpen === c.id" class="stack" @click.stop>
         <textarea v-model="replyBody" class="input" rows="2" placeholder="Reply…" />
         <div class="row" style="gap: 0.4rem">
           <button class="btn btn-sm btn-primary" :disabled="posting" @click="reply(c.id)">
@@ -143,7 +200,7 @@ watch(filter, load);
         </div>
       </div>
 
-      <div class="row wrap" style="gap: 0.4rem">
+      <div class="row wrap" style="gap: 0.4rem" @click.stop>
         <button v-if="replyOpen !== c.id" class="btn btn-sm" @click="replyOpen = c.id">
           Reply
         </button>
@@ -159,6 +216,26 @@ watch(filter, load);
 <style scoped>
 .thread {
   gap: 0.6rem;
+}
+.thread.anchored {
+  cursor: pointer;
+}
+.thread.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.pending-anchor {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.pending-anchor .anchor {
+  flex: 1;
+  margin: 0;
+  border-left-color: var(--accent);
+}
+.clear-anchor {
+  flex: none;
 }
 .c-meta {
   font-size: 0.8rem;

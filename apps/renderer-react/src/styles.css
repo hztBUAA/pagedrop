@@ -134,6 +134,15 @@ body {
   background: #fff;
 }
 
+::highlight(pd-anchor) {
+  background: rgba(91, 140, 255, 0.22);
+  color: inherit;
+}
+::highlight(pd-anchor-active) {
+  background: rgba(91, 140, 255, 0.45);
+  color: inherit;
+}
+
 .katex-display {
   overflow-x: auto;
   overflow-y: hidden;

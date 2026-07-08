@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { projectApi } from "@/api";
 import { ApiRequestError } from "@/api/client";
-import type { Project, Version, VersionSummary } from "@/api/types";
+import type { Comment, Project, Version, VersionSummary } from "@/api/types";
 import PageRenderer from "@/components/PageRenderer.vue";
 import ProjectSettings from "@/components/ProjectSettings.vue";
 import ShareLinks from "@/components/ShareLinks.vue";
@@ -13,7 +13,7 @@ const route = useRoute();
 const wsSlug = computed(() => route.params.ws as string);
 const projectSlug = computed(() => route.params.slug as string);
 
-type Tab = "view" | "history" | "comments" | "settings" | "share";
+type Tab = "view" | "history" | "settings" | "share";
 const tab = ref<Tab>("view");
 
 // Mobile: collapse the slug/visibility line so the tabs + content sit higher.
@@ -24,6 +24,29 @@ const versions = ref<VersionSummary[]>([]);
 const active = ref<Version | null>(null);
 const loading = ref(true);
 const error = ref("");
+
+// Anchored-comment wiring: selection in the content, comment highlights, and
+// two-way focus between the document and the comment rail.
+const pendingAnchor = ref<{ quote: string; prefix: string; suffix: string } | null>(null);
+const focusedAnchorId = ref<string | null>(null);
+const comments = ref<Comment[]>([]);
+
+const anchors = computed(() =>
+  comments.value
+    .filter(
+      (c) =>
+        !c.thread_root_id &&
+        c.anchor_quote &&
+        (c.anchor_version_number == null ||
+          c.anchor_version_number === active.value?.version_number),
+    )
+    .map((c) => ({
+      id: c.id,
+      quote: c.anchor_quote as string,
+      prefix: c.anchor_prefix ?? "",
+      suffix: c.anchor_suffix ?? "",
+    })),
+);
 
 async function loadProject() {
   loading.value = true;
@@ -43,6 +66,8 @@ async function loadProject() {
 }
 
 async function loadVersion(n: number) {
+  pendingAnchor.value = null;
+  focusedAnchorId.value = null;
   active.value = await projectApi.version(wsSlug.value, projectSlug.value, n);
 }
 
@@ -97,25 +122,42 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
         <button :class="{ on: tab === 'history' }" @click="tab = 'history'">
           History ({{ versions.length }})
         </button>
-        <button :class="{ on: tab === 'comments' }" @click="tab = 'comments'">Comments</button>
         <button :class="{ on: tab === 'share' }" @click="tab = 'share'">Share</button>
         <button :class="{ on: tab === 'settings' }" @click="tab = 'settings'">Settings</button>
       </nav>
 
       <section v-show="tab === 'view'">
-        <div v-if="active">
-          <div class="muted version-meta">
-            v{{ active.version_number }} · {{ active.content_type }} ·
-            {{ new Date(active.created_at).toLocaleString() }}
-            <span v-if="active.secret_scan_status !== 'clean'" class="badge unlisted">
-              scan: {{ active.secret_scan_status }}
-            </span>
+        <div v-if="active" class="view-grid">
+          <div class="view-doc">
+            <div class="muted version-meta">
+              v{{ active.version_number }} · {{ active.content_type }} ·
+              {{ new Date(active.created_at).toLocaleString() }}
+              <span v-if="active.secret_scan_status !== 'clean'" class="badge unlisted">
+                scan: {{ active.secret_scan_status }}
+              </span>
+            </div>
+            <PageRenderer
+              :content-type="active.content_type"
+              :source-content="active.source_content"
+              :rendered-html="active.rendered_html"
+              :anchors="anchors"
+              :focused-anchor-id="focusedAnchorId"
+              @select="pendingAnchor = $event"
+              @anchor-click="focusedAnchorId = $event"
+            />
           </div>
-          <PageRenderer
-            :content-type="active.content_type"
-            :source-content="active.source_content"
-            :rendered-html="active.rendered_html"
-          />
+          <aside class="view-rail">
+            <CommentsPanel
+              :ws="wsSlug"
+              :slug="projectSlug"
+              :pending-anchor="pendingAnchor"
+              :active-version="active.version_number"
+              :focused-id="focusedAnchorId"
+              @clear-anchor="pendingAnchor = null"
+              @focus="focusedAnchorId = $event"
+              @loaded="comments = $event"
+            />
+          </aside>
         </div>
         <p v-else class="muted">No versions published yet.</p>
       </section>
@@ -135,10 +177,6 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
             </div>
           </div>
         </button>
-      </section>
-
-      <section v-show="tab === 'comments'" class="comments-wrap">
-        <CommentsPanel :ws="wsSlug" :slug="projectSlug" />
       </section>
 
       <section v-show="tab === 'share'">
@@ -217,6 +255,21 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
   align-items: center;
   gap: 0.4rem;
 }
+.view-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 1.5rem;
+  align-items: start;
+}
+.view-doc {
+  min-width: 0;
+}
+.view-rail {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
 .version-row {
   color: var(--text);
   width: 100%;
@@ -225,6 +278,18 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
 }
 .version-row:hover {
   border-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .view-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+  }
+  .view-rail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
 }
 
 @media (max-width: 640px) {

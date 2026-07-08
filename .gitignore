@@ -37,3 +37,6 @@ apps/cli/dist/
 *.sqlite3
 *.db
 pgdata/
+
+# Local Claude Code config / worktrees / plans
+.claude/

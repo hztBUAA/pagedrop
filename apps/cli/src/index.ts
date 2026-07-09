@@ -22,6 +22,7 @@ import {
 } from "./media.js";
 
 const DEFAULT_URL = "https://pagedrop.justinhuang.top";
+const SHARE_PREFIX = "pds_";
 
 interface AssetResponse {
   id: string;
@@ -350,6 +351,22 @@ program
       } catch (err) {
         reportApiError(err);
       }
+    } else if (opts.images !== false) {
+      // stdin / no base directory: local images can't be resolved or uploaded.
+      // Warn loudly instead of silently publishing broken relative-path images.
+      const stray = extractLocalImageRefs(content);
+      if (stray.length > 0) {
+        process.stderr.write(
+          `warning: ${stray.length} local image reference(s) will NOT be uploaded ` +
+            `because content was read from stdin (no base directory):\n`,
+        );
+        for (const ref of stray) process.stderr.write(`  - ${ref}\n`);
+        process.stderr.write(
+          "These will render as broken images. Write the content to a file and " +
+            "publish that file so images upload, or reference images via " +
+            "pagedrop://asset/<id> / http(s) URLs.\n",
+        );
+      }
     }
 
     const body = {
@@ -502,6 +519,177 @@ program
           (ids.length ? ` (+${ids.length} image(s) in ${assetsDir})` : "") +
           "\n",
       );
+    } catch (err) {
+      reportApiError(err);
+    }
+  });
+
+interface ReadPage {
+  workspace_slug?: string;
+  project_slug?: string;
+  title: string;
+  visibility?: string;
+  content_type: string;
+  source_content: string;
+  version_number: number;
+  is_latest?: boolean;
+  summary?: string | null;
+  changelog?: string | null;
+  updated_at?: string;
+}
+
+type ReadTarget =
+  | { kind: "share"; token: string; baseUrl?: string }
+  | { kind: "version"; workspace: string; slug: string; version?: number; baseUrl?: string };
+
+/** Resolve a positional target (share URL/token or page URL) plus -w/-s flags into a read target. */
+function parseReadTarget(
+  target: string | undefined,
+  opts: { workspace?: string; slug?: string; version?: number },
+): ReadTarget {
+  const flagVersion = typeof opts.version === "number" && !Number.isNaN(opts.version)
+    ? opts.version
+    : undefined;
+
+  if (target && /^https?:\/\//i.test(target)) {
+    let u: URL;
+    try {
+      u = new URL(target);
+    } catch {
+      fail(`invalid URL: ${target}`);
+    }
+    const baseUrl = u.origin;
+    const parts = u.pathname.split("/").filter(Boolean);
+    const shareIdx = parts.indexOf("share");
+    if (shareIdx !== -1 && parts[shareIdx + 1]) {
+      return { kind: "share", token: parts[shareIdx + 1], baseUrl };
+    }
+    // /p/<ws>/<slug>[/v/<n>]  or  /manage/<ws>/<slug>
+    const anchor = parts.findIndex((p) => p === "p" || p === "manage");
+    if (anchor !== -1 && parts[anchor + 1] && parts[anchor + 2]) {
+      let version = flagVersion;
+      const vIdx = parts.indexOf("v", anchor + 2);
+      if (vIdx !== -1 && parts[vIdx + 1]) {
+        const n = parseInt(parts[vIdx + 1], 10);
+        if (!Number.isNaN(n)) version = n;
+      }
+      return { kind: "version", workspace: parts[anchor + 1], slug: parts[anchor + 2], version, baseUrl };
+    }
+    fail(`unrecognized PageDrop URL: ${target}`);
+  }
+
+  if (target && target.startsWith(SHARE_PREFIX)) {
+    return { kind: "share", token: target };
+  }
+  if (opts.workspace && opts.slug) {
+    return { kind: "version", workspace: opts.workspace, slug: opts.slug, version: flagVersion };
+  }
+  if (target) {
+    // A bare, non-URL token: treat as an (opaque) share token.
+    return { kind: "share", token: target };
+  }
+  fail("provide a share URL/token, a page URL, or -w <ws> -s <slug>");
+}
+
+/** Build a client for a read: reuse the profile, but tolerate a missing profile for share links. */
+function readClient(target: ReadTarget, profileName?: string): ApiClient {
+  try {
+    const { profile } = resolveProfile(profileName);
+    return new ApiClient(target.baseUrl ?? profile.baseUrl, profile.token);
+  } catch (err) {
+    if (target.kind === "share") {
+      return new ApiClient(target.baseUrl ?? DEFAULT_URL, "");
+    }
+    throw err;
+  }
+}
+
+program
+  .command("read")
+  .description(
+    "Read a page as structured data — from a share URL/token, a page URL (/p/ or /manage/), " +
+      "or -w/-s (+ --version). Prints JSON to stdout by default; use --content for raw source, " +
+      "-o to download files like pull.",
+  )
+  .argument("[target]", "share URL/token, page URL, or omit and use -w/-s")
+  .option("-w, --workspace <slug>", "workspace slug (when no URL/token is given)")
+  .option("-s, --slug <slug>", "project slug (when no URL/token is given)")
+  .option("--version <n>", "version number (defaults to latest)", (v) => parseInt(v, 10))
+  .option("--password <password>", "password for a protected share link")
+  .option("--content", "print only the raw source content (not full JSON)", false)
+  .option("-o, --out <dir>", "download to files (like pull) instead of printing")
+  .action(async (target, opts) => {
+    const t = parseReadTarget(target, opts);
+    const client = readClient(t, program.opts().profile);
+    try {
+      let page: ReadPage;
+      let resolvedVersion: number | undefined = t.kind === "version" ? t.version : undefined;
+
+      if (t.kind === "share") {
+        try {
+          page = await client.get<ReadPage>(`/public/share/${t.token}`);
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401 && opts.password) {
+            page = await client.post<ReadPage>(`/public/share/${t.token}/verify-password`, {
+              password: opts.password,
+            });
+          } else if (err instanceof ApiError && err.status === 401) {
+            fail("this share link is password-protected; pass --password <pw>");
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        if (resolvedVersion === undefined) {
+          const versions = await client.get<Array<{ version_number: number }>>(
+            `/projects/${t.workspace}/${t.slug}/versions`,
+          );
+          if (versions.length === 0) fail("project has no versions");
+          resolvedVersion = Math.max(...versions.map((v) => v.version_number));
+        }
+        page = await client.get<ReadPage>(
+          `/projects/${t.workspace}/${t.slug}/versions/${resolvedVersion}`,
+        );
+      }
+
+      if (opts.out) {
+        const slug = t.kind === "version" ? t.slug : page.project_slug ?? "page";
+        const outDir = resolve(opts.out);
+        const assetsDir = join(outDir, "assets");
+        let content = page.source_content;
+        const ids = extractAssetIds(content);
+        if (ids.length > 0) mkdirSync(assetsDir, { recursive: true });
+        for (const id of ids) {
+          // Share reads fetch via the public asset endpoint, carrying the share
+          // token so private-page images resolve once the backend honors it.
+          const path =
+            t.kind === "share"
+              ? `/public/assets/${id}?share_token=${encodeURIComponent(t.token)}`
+              : `/assets/${id}`;
+          const { data, contentType } = await client.getBytes(path);
+          const ext = EXT_BY_MIME[contentType] ?? "bin";
+          const rel = join("assets", `${id}.${ext}`);
+          writeFileSync(join(outDir, rel), data);
+          content = replaceRef(content, `pagedrop://asset/${id}`, rel);
+        }
+        mkdirSync(outDir, { recursive: true });
+        const ext = page.content_type === "markdown" ? "md" : "html";
+        const outFile = join(outDir, `${slug}.${ext}`);
+        writeFileSync(outFile, content);
+        process.stdout.write(
+          `Read ${slug} v${page.version_number ?? resolvedVersion} → ${outFile}` +
+            (ids.length ? ` (+${ids.length} image(s) in ${assetsDir})` : "") +
+            "\n",
+        );
+        return;
+      }
+
+      if (opts.content) {
+        process.stdout.write(page.source_content);
+        if (!page.source_content.endsWith("\n")) process.stdout.write("\n");
+        return;
+      }
+      process.stdout.write(JSON.stringify(page, null, 2) + "\n");
     } catch (err) {
       reportApiError(err);
     }

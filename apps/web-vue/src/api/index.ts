@@ -47,14 +47,18 @@ export const workspaceApi = {
 export const projectApi = {
   list: (
     workspaceId: string,
-    opts?: { q?: string; limit?: number; offset?: number },
+    opts?: { q?: string; folder?: string; status?: string; limit?: number; offset?: number },
   ) => {
     const params = new URLSearchParams({ workspace_id: workspaceId });
     if (opts?.q) params.set("q", opts.q);
+    if (opts?.folder) params.set("folder", opts.folder);
+    if (opts?.status) params.set("status", opts.status);
     if (opts?.limit != null) params.set("limit", String(opts.limit));
     if (opts?.offset != null) params.set("offset", String(opts.offset));
     return api.get<Project[]>(`/projects?${params.toString()}`);
   },
+  folders: (workspaceId: string) =>
+    api.get<string[]>(`/projects/folders?workspace_id=${workspaceId}`),
   publish: (payload: PublishRequest) =>
     api.post<PublishResponse>("/projects.publish", payload),
   get: (ws: string, slug: string) =>
@@ -66,8 +70,14 @@ export const projectApi = {
   updateSettings: (
     ws: string,
     slug: string,
-    payload: { title?: string; description?: string; visibility?: string },
+    payload: { title?: string; description?: string; visibility?: string; folder_path?: string | null },
   ) => api.patch<Project>(`/projects/${ws}/${slug}/settings`, payload),
+  archive: (ws: string, slug: string) =>
+    api.post<Project>(`/projects/${ws}/${slug}/archive`),
+  unarchive: (ws: string, slug: string) =>
+    api.post<Project>(`/projects/${ws}/${slug}/unarchive`),
+  del: (ws: string, slug: string) =>
+    api.del<{ status: string }>(`/projects/${ws}/${slug}`),
 };
 
 export const tokenApi = {

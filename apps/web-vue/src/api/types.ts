@@ -33,6 +33,8 @@ export interface Project {
   description: string | null;
   default_content_type: string;
   visibility: string;
+  folder_path: string | null;
+  status: string;
   latest_version_id: string | null;
   created_at: string;
   updated_at: string;
@@ -63,6 +65,7 @@ export interface PublishRequest {
   content_type: string;
   content: string;
   visibility: string;
+  folder_path?: string | null;
   message?: string | null;
   summary?: string | null;
   source?: string;

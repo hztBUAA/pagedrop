@@ -8,6 +8,7 @@ const PAGE_SIZE = 20;
 
 const ws = useWorkspaceStore();
 const projects = ref<Project[]>([]);
+const folders = ref<string[]>([]);
 const loading = ref(false);
 const loadingMore = ref(false);
 const error = ref("");
@@ -16,8 +17,29 @@ const newWsName = ref("");
 const search = ref("");
 const offset = ref(0);
 const hasMore = ref(false);
+const selectedFolder = ref("");
+const status = ref<"active" | "archived">("active");
 
 const current = computed(() => ws.current());
+
+// Split "ops/pagedrop" into clickable breadcrumb segments.
+const breadcrumb = computed(() => {
+  if (!selectedFolder.value) return [];
+  const parts = selectedFolder.value.split("/");
+  return parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join("/") }));
+});
+
+async function loadFolders() {
+  if (!ws.currentId) {
+    folders.value = [];
+    return;
+  }
+  try {
+    folders.value = await projectApi.folders(ws.currentId);
+  } catch {
+    folders.value = [];
+  }
+}
 
 async function loadProjects(reset = true) {
   if (!ws.currentId) {
@@ -34,6 +56,8 @@ async function loadProjects(reset = true) {
   try {
     const batch = await projectApi.list(ws.currentId, {
       q: search.value.trim() || undefined,
+      folder: selectedFolder.value || undefined,
+      status: status.value,
       limit: PAGE_SIZE,
       offset: offset.value,
     });
@@ -46,6 +70,10 @@ async function loadProjects(reset = true) {
     loading.value = false;
     loadingMore.value = false;
   }
+}
+
+function selectFolder(path: string) {
+  selectedFolder.value = path;
 }
 
 async function createWorkspace() {
@@ -62,7 +90,17 @@ watch(search, () => {
   searchTimer = setTimeout(() => loadProjects(true), 250);
 });
 
-watch(() => ws.currentId, () => loadProjects(true), { immediate: true });
+watch([selectedFolder, status], () => loadProjects(true));
+
+watch(
+  () => ws.currentId,
+  () => {
+    selectedFolder.value = "";
+    loadFolders();
+    loadProjects(true);
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -84,52 +122,154 @@ watch(() => ws.currentId, () => loadProjects(true), { immediate: true });
       </div>
     </form>
 
-    <input
-      v-model="search"
-      class="input"
-      style="margin-bottom: 1rem"
-      type="search"
-      placeholder="Search pages by title or slug…"
-    />
-
-    <p v-if="loading" class="muted">Loading…</p>
-    <p v-else-if="error" class="error">{{ error }}</p>
-    <div v-else-if="!projects.length" class="card muted">
-      <template v-if="search.trim()">No pages match “{{ search.trim() }}”.</template>
-      <template v-else>
-        No pages yet.
-        <router-link :to="{ name: 'new-page' }">Publish your first page.</router-link>
-      </template>
+    <div class="row between wrap" style="margin-bottom: 1rem; gap: 0.5rem">
+      <input
+        v-model="search"
+        class="input grow"
+        type="search"
+        placeholder="Search pages by title or slug…"
+      />
+      <div class="row" style="gap: 0.25rem">
+        <button
+          class="btn btn-sm"
+          :class="{ 'btn-primary': status === 'active' }"
+          @click="status = 'active'"
+        >
+          Active
+        </button>
+        <button
+          class="btn btn-sm"
+          :class="{ 'btn-primary': status === 'archived' }"
+          @click="status = 'archived'"
+        >
+          Archived
+        </button>
+      </div>
     </div>
 
-    <div v-else class="stack">
-      <router-link
-        v-for="p in projects"
-        :key="p.id"
-        class="card project-row row between"
-        :to="{ name: 'project-manage', params: { ws: current?.slug, slug: p.slug } }"
-      >
-        <div>
-          <div class="title">{{ p.title }}</div>
-          <div class="muted slug">/{{ current?.slug }}/{{ p.slug }}</div>
-        </div>
-        <span class="badge" :class="p.visibility">{{ p.visibility }}</span>
-      </router-link>
+    <div class="layout">
+      <aside v-if="folders.length" class="folders card">
+        <button
+          class="folder-item"
+          :class="{ active: selectedFolder === '' }"
+          @click="selectFolder('')"
+        >
+          All pages
+        </button>
+        <button
+          v-for="f in folders"
+          :key="f"
+          class="folder-item"
+          :class="{ active: selectedFolder === f }"
+          :style="{ paddingLeft: `${0.6 + f.split('/').length * 0.6}rem` }"
+          @click="selectFolder(f)"
+        >
+          {{ f.split("/").slice(-1)[0] }}
+        </button>
+      </aside>
 
-      <button
-        v-if="hasMore"
-        class="btn btn-sm"
-        style="align-self: center"
-        :disabled="loadingMore"
-        @click="loadProjects(false)"
-      >
-        {{ loadingMore ? "Loading…" : "Load more" }}
-      </button>
+      <div class="main">
+        <nav v-if="breadcrumb.length" class="breadcrumb muted">
+          <button class="crumb" @click="selectFolder('')">All</button>
+          <template v-for="c in breadcrumb" :key="c.path">
+            <span class="sep">/</span>
+            <button class="crumb" @click="selectFolder(c.path)">{{ c.name }}</button>
+          </template>
+        </nav>
+
+        <p v-if="loading" class="muted">Loading…</p>
+        <p v-else-if="error" class="error">{{ error }}</p>
+        <div v-else-if="!projects.length" class="card muted">
+          <template v-if="search.trim()">No pages match “{{ search.trim() }}”.</template>
+          <template v-else-if="status === 'archived'">No archived pages.</template>
+          <template v-else-if="selectedFolder">No pages in this folder.</template>
+          <template v-else>
+            No pages yet.
+            <router-link :to="{ name: 'new-page' }">Publish your first page.</router-link>
+          </template>
+        </div>
+
+        <div v-else class="stack">
+          <router-link
+            v-for="p in projects"
+            :key="p.id"
+            class="card project-row row between"
+            :to="{ name: 'project-manage', params: { ws: current?.slug, slug: p.slug } }"
+          >
+            <div>
+              <div class="title">{{ p.title }}</div>
+              <div class="muted slug">
+                <span v-if="p.folder_path">{{ p.folder_path }}/ · </span
+                >/{{ current?.slug }}/{{ p.slug }}
+              </div>
+            </div>
+            <span class="badge" :class="p.visibility">{{ p.visibility }}</span>
+          </router-link>
+
+          <button
+            v-if="hasMore"
+            class="btn btn-sm"
+            style="align-self: center"
+            :disabled="loadingMore"
+            @click="loadProjects(false)"
+          >
+            {{ loadingMore ? "Loading…" : "Load more" }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.folders {
+  flex: 0 0 200px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.folder-item {
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.folder-item:hover {
+  background: var(--surface-2, rgba(127, 127, 127, 0.1));
+}
+.folder-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.breadcrumb {
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+.crumb {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+.sep {
+  margin: 0 0.3rem;
+}
 .project-row {
   color: var(--text);
 }
@@ -142,5 +282,17 @@ watch(() => ws.currentId, () => loadProjects(true), { immediate: true });
 .slug {
   font-size: 0.82rem;
   margin-top: 0.15rem;
+}
+@media (max-width: 640px) {
+  .layout {
+    flex-direction: column;
+  }
+  .folders {
+    flex-basis: auto;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow-x: auto;
+  }
 }
 </style>

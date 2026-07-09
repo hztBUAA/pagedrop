@@ -54,9 +54,11 @@ export default function App() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  // Selection -> parent. mouseup finalizes a selection (empty = cleared).
+  // Selection -> parent. mouseup finalizes on desktop; touch devices never fire
+  // mouseup for a text selection, so we also listen for touchend and a debounced
+  // selectionchange (which covers long-press selection and handle dragging).
   useEffect(() => {
-    function onMouseUp() {
+    function finalizeSelection() {
       const root = rootRef.current;
       const sel = window.getSelection();
       if (!root || !sel) return;
@@ -67,8 +69,22 @@ export default function App() {
         postToParent({ source: RENDERER_SOURCE, type: "selection", quote: "", prefix: "", suffix: "" });
       }
     }
-    document.addEventListener("mouseup", onMouseUp);
-    return () => document.removeEventListener("mouseup", onMouseUp);
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    function onSelectionChange() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(finalizeSelection, 300);
+    }
+
+    document.addEventListener("mouseup", finalizeSelection);
+    document.addEventListener("touchend", finalizeSelection);
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("mouseup", finalizeSelection);
+      document.removeEventListener("touchend", finalizeSelection);
+      document.removeEventListener("selectionchange", onSelectionChange);
+    };
   }, []);
 
   // Click on a highlighted range -> parent (best-effort hit test).

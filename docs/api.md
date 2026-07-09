@@ -72,6 +72,37 @@ overwritten. Rate limit: 30/min.
 masked previews are returned — never full secret values. Set `"force": true` to
 publish anyway.
 
+## Visibility & sharing model
+
+Every project has a `visibility` of `public`, `unlisted`, or `private`. All
+access decisions go through one function — `can_view_project`
+(`backend/app/permissions/service.py`):
+
+| Visibility | Who can view via the canonical URL | Search engines |
+| --- | --- | --- |
+| `public` | anyone with the link, including anonymous | indexable |
+| `unlisted` | anyone with the link, including anonymous | `noindex` |
+| `private` | workspace members / platform admins only (anonymous → `404`) | `noindex` |
+
+Two things commonly trip people up:
+
+- **`unlisted` is fully shareable.** `can_view_project` only restricts
+  `private`; `public` and `unlisted` are both served to anyone who has the link.
+  The *only* behavioral difference between `public` and `unlisted` is the
+  `noindex` meta tag (`public.py`: `noindex = visibility != "public"`, applied by
+  the web app). There is no public directory or listing page, so "unlisted"
+  effectively means "public but not indexed / not advertised."
+- **Share links bypass visibility entirely.** `GET /public/share/{token}` does
+  **not** call `can_view_project` — the share token (plus an optional password)
+  is the sole gate. This is how a `private` page can still be handed to an
+  outside viewer: create a share link rather than flipping the project to
+  public. Share links also carry optional expiry, password, and max-view limits.
+
+Note that the public *asset* endpoint (`/public/assets/{id}`) still enforces
+`can_view_project`, so images on a `private` page shared by link will not load
+unless the viewer is a workspace member. Prefer `unlisted` for link-sharing
+pages that contain images.
+
 ## Share links
 
 | Method | Path | Auth |

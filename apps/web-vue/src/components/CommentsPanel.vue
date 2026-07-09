@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { commentApi } from "@/api";
 import { ApiRequestError } from "@/api/client";
 import type { Comment } from "@/api/types";
+import { useAuthStore } from "@/stores/auth";
 
 interface PendingAnchor {
   quote: string;
@@ -16,6 +18,10 @@ const props = defineProps<{
   pendingAnchor?: PendingAnchor | null;
   activeVersion?: number | null;
   focusedId?: string | null;
+  // "public" gates commenting behind login and hides moderation (resolve/delete).
+  mode?: "manage" | "public";
+  // Present on share-link pages; authorizes commenting on private shared pages.
+  shareToken?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -23,6 +29,14 @@ const emit = defineEmits<{
   focus: [id: string | null];
   loaded: [comments: Comment[]];
 }>();
+
+const auth = useAuthStore();
+const route = useRoute();
+
+const isPublic = computed(() => props.mode === "public");
+const canModerate = computed(() => !isPublic.value);
+const needsLogin = computed(() => isPublic.value && !auth.user);
+const loginTo = computed(() => ({ name: "login", query: { redirect: route.fullPath } }));
 
 const comments = ref<Comment[]>([]);
 const loading = ref(false);
@@ -40,11 +54,16 @@ function repliesOf(rootId: string) {
 }
 
 async function load() {
+  if (needsLogin.value) {
+    comments.value = [];
+    emit("loaded", []);
+    return;
+  }
   loading.value = true;
   error.value = "";
   try {
     const status = filter.value === "all" ? undefined : filter.value;
-    comments.value = await commentApi.list(props.ws, props.slug, status);
+    comments.value = await commentApi.list(props.ws, props.slug, status, props.shareToken);
     emit("loaded", comments.value);
   } catch {
     error.value = "Failed to load comments.";
@@ -59,17 +78,22 @@ async function post() {
   error.value = "";
   try {
     const anchor = props.pendingAnchor;
-    await commentApi.create(props.ws, props.slug, {
-      body: newBody.value.trim(),
-      ...(anchor
-        ? {
-            anchor_quote: anchor.quote,
-            anchor_prefix: anchor.prefix,
-            anchor_suffix: anchor.suffix,
-            anchor_version_number: props.activeVersion ?? null,
-          }
-        : {}),
-    });
+    await commentApi.create(
+      props.ws,
+      props.slug,
+      {
+        body: newBody.value.trim(),
+        ...(anchor
+          ? {
+              anchor_quote: anchor.quote,
+              anchor_prefix: anchor.prefix,
+              anchor_suffix: anchor.suffix,
+              anchor_version_number: props.activeVersion ?? null,
+            }
+          : {}),
+      },
+      props.shareToken,
+    );
     newBody.value = "";
     emit("clearAnchor");
     await load();
@@ -84,10 +108,12 @@ async function reply(rootId: string) {
   if (!replyBody.value.trim()) return;
   posting.value = true;
   try {
-    await commentApi.create(props.ws, props.slug, {
-      body: replyBody.value.trim(),
-      thread_root_id: rootId,
-    });
+    await commentApi.create(
+      props.ws,
+      props.slug,
+      { body: replyBody.value.trim(), thread_root_id: rootId },
+      props.shareToken,
+    );
     replyBody.value = "";
     replyOpen.value = null;
     await load();
@@ -110,6 +136,7 @@ async function remove(id: string) {
 
 onMounted(load);
 watch(filter, load);
+watch(() => auth.user, load);
 watch(
   () => props.focusedId,
   (id) => {
@@ -125,91 +152,103 @@ watch(
 
 <template>
   <div class="stack">
-    <form class="card stack" @submit.prevent="post">
-      <strong>Add a comment</strong>
-      <div v-if="pendingAnchor" class="pending-anchor">
-        <blockquote class="anchor">{{ pendingAnchor.quote }}</blockquote>
-        <button type="button" class="btn btn-sm clear-anchor" @click="emit('clearAnchor')">
-          Clear
-        </button>
-      </div>
-      <textarea
-        v-model="newBody"
-        class="input"
-        rows="3"
-        :placeholder="
-          pendingAnchor ? 'Comment on the selected text…' : 'Leave feedback on this document…'
-        "
-      />
+    <div v-if="needsLogin" class="card stack">
+      <strong>Comments</strong>
+      <p class="muted">Log in to read and post comments on this page.</p>
       <div>
-        <button class="btn btn-primary" :disabled="posting" type="submit">Post</button>
+        <router-link :to="loginTo" class="btn btn-primary btn-sm">Log in to comment</router-link>
       </div>
-    </form>
-
-    <div class="row wrap" style="gap: 0.4rem">
-      <button
-        v-for="f in (['open', 'resolved', 'all'] as const)"
-        :key="f"
-        class="btn btn-sm"
-        :class="{ 'btn-primary': filter === f }"
-        @click="filter = f"
-      >
-        {{ f }}
-      </button>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="loading" class="muted">Loading…</p>
-    <p v-else-if="roots.length === 0" class="muted">No comments yet.</p>
-
-    <div
-      v-for="c in roots"
-      :id="'comment-' + c.id"
-      :key="c.id"
-      class="card stack thread"
-      :class="{ anchored: !!c.anchor_quote, focused: focusedId === c.id }"
-      @click="c.anchor_quote && emit('focus', c.id)"
-    >
-      <div class="row between wrap">
-        <div class="grow">
-          <div class="c-meta muted">
-            <strong>{{ c.author_display ?? "?" }}</strong>
-            <span class="badge" :class="{ private: c.status === 'resolved' }">{{ c.status }}</span>
-            · {{ new Date(c.created_at).toLocaleString() }}
-          </div>
-          <blockquote v-if="c.anchor_quote" class="anchor">{{ c.anchor_quote }}</blockquote>
-          <p class="c-body">{{ c.body }}</p>
-        </div>
-      </div>
-
-      <div v-for="r in repliesOf(c.id)" :key="r.id" class="reply">
-        <div class="c-meta muted">
-          <strong>{{ r.author_display ?? "?" }}</strong>
-          · {{ new Date(r.created_at).toLocaleString() }}
-        </div>
-        <p class="c-body">{{ r.body }}</p>
-      </div>
-
-      <div v-if="replyOpen === c.id" class="stack" @click.stop>
-        <textarea v-model="replyBody" class="input" rows="2" placeholder="Reply…" />
-        <div class="row" style="gap: 0.4rem">
-          <button class="btn btn-sm btn-primary" :disabled="posting" @click="reply(c.id)">
-            Send
+    <template v-else>
+      <form class="card stack" @submit.prevent="post">
+        <strong>Add a comment</strong>
+        <div v-if="pendingAnchor" class="pending-anchor">
+          <blockquote class="anchor">{{ pendingAnchor.quote }}</blockquote>
+          <button type="button" class="btn btn-sm clear-anchor" @click="emit('clearAnchor')">
+            Clear
           </button>
-          <button class="btn btn-sm" @click="replyOpen = null">Cancel</button>
         </div>
+        <textarea
+          v-model="newBody"
+          class="input"
+          rows="3"
+          :placeholder="
+            pendingAnchor ? 'Comment on the selected text…' : 'Leave feedback on this document…'
+          "
+        />
+        <div>
+          <button class="btn btn-primary" :disabled="posting" type="submit">Post</button>
+        </div>
+      </form>
+
+      <div class="row wrap" style="gap: 0.4rem">
+        <button
+          v-for="f in (['open', 'resolved', 'all'] as const)"
+          :key="f"
+          class="btn btn-sm"
+          :class="{ 'btn-primary': filter === f }"
+          @click="filter = f"
+        >
+          {{ f }}
+        </button>
       </div>
 
-      <div class="row wrap" style="gap: 0.4rem" @click.stop>
-        <button v-if="replyOpen !== c.id" class="btn btn-sm" @click="replyOpen = c.id">
-          Reply
-        </button>
-        <button class="btn btn-sm" @click="toggleStatus(c)">
-          {{ c.status === "resolved" ? "Reopen" : "Resolve" }}
-        </button>
-        <button class="btn btn-sm btn-danger" @click="remove(c.id)">Delete</button>
+      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="loading" class="muted">Loading…</p>
+      <p v-else-if="roots.length === 0" class="muted">No comments yet.</p>
+
+      <div
+        v-for="c in roots"
+        :id="'comment-' + c.id"
+        :key="c.id"
+        class="card stack thread"
+        :class="{ anchored: !!c.anchor_quote, focused: focusedId === c.id }"
+        @click="c.anchor_quote && emit('focus', c.id)"
+      >
+        <div class="row between wrap">
+          <div class="grow">
+            <div class="c-meta muted">
+              <strong>{{ c.author_display ?? "?" }}</strong>
+              <span class="badge" :class="{ private: c.status === 'resolved' }">{{ c.status }}</span>
+              · {{ new Date(c.created_at).toLocaleString() }}
+            </div>
+            <blockquote v-if="c.anchor_quote" class="anchor">{{ c.anchor_quote }}</blockquote>
+            <p class="c-body">{{ c.body }}</p>
+          </div>
+        </div>
+
+        <div v-for="r in repliesOf(c.id)" :key="r.id" class="reply">
+          <div class="c-meta muted">
+            <strong>{{ r.author_display ?? "?" }}</strong>
+            · {{ new Date(r.created_at).toLocaleString() }}
+          </div>
+          <p class="c-body">{{ r.body }}</p>
+        </div>
+
+        <div v-if="replyOpen === c.id" class="stack" @click.stop>
+          <textarea v-model="replyBody" class="input" rows="2" placeholder="Reply…" />
+          <div class="row" style="gap: 0.4rem">
+            <button class="btn btn-sm btn-primary" :disabled="posting" @click="reply(c.id)">
+              Send
+            </button>
+            <button class="btn btn-sm" @click="replyOpen = null">Cancel</button>
+          </div>
+        </div>
+
+        <div class="row wrap" style="gap: 0.4rem" @click.stop>
+          <button v-if="replyOpen !== c.id" class="btn btn-sm" @click="replyOpen = c.id">
+            Reply
+          </button>
+          <button v-if="canModerate" class="btn btn-sm" @click="toggleStatus(c)">
+            {{ c.status === "resolved" ? "Reopen" : "Resolve" }}
+          </button>
+          <button v-if="canModerate" class="btn btn-sm btn-danger" @click="remove(c.id)">
+            Delete
+          </button>
+        </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 

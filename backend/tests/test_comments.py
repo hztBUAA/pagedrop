@@ -25,7 +25,7 @@ def owner_client():
         yield c
 
 
-def _publish(client, slug="doc"):
+def _publish(client, slug="doc", visibility="private"):
     return client.post(
         "/api/v1/projects.publish",
         json={
@@ -34,7 +34,7 @@ def _publish(client, slug="doc"):
             "title": "Doc",
             "content_type": "markdown",
             "content": "The quick brown fox jumps.",
-            "visibility": "private",
+            "visibility": visibility,
         },
     )
 
@@ -112,3 +112,44 @@ def test_non_member_cannot_comment(owner_client):
         _register(other, f"x-{uuid.uuid4().hex[:6]}@example.com")
         resp = other.post(_base(owner_client) + "/comments", json={"body": "hi"})
         assert resp.status_code == 403
+
+
+def test_anonymous_cannot_comment(owner_client):
+    _publish(owner_client, slug="pub", visibility="public")
+    with TestClient(app) as anon:
+        resp = anon.post(_base(owner_client, "pub") + "/comments", json={"body": "hi"})
+        assert resp.status_code == 401
+
+
+def test_logged_in_non_member_can_comment_on_public(owner_client):
+    _publish(owner_client, slug="pub", visibility="public")
+    with TestClient(app) as other:
+        _register(other, f"pub-{uuid.uuid4().hex[:6]}@example.com", name="Reader")
+        resp = other.post(
+            _base(owner_client, "pub") + "/comments", json={"body": "great read"}
+        )
+        assert resp.status_code == 200, resp.text
+        # ...and can read the thread back.
+        listed = other.get(_base(owner_client, "pub") + "/comments").json()
+        assert len(listed) == 1
+        # ...but cannot moderate (resolve stays members-only).
+        cid = resp.json()["id"]
+        assert other.post(f"/api/v1/comments/{cid}/resolve").status_code == 403
+
+
+def test_logged_in_non_member_can_comment_via_share_token(owner_client):
+    _publish(owner_client, slug="priv", visibility="private")
+    created = owner_client.post(
+        _base(owner_client, "priv") + "/share-links", json={"access_type": "latest"}
+    )
+    assert created.status_code in (200, 201), created.text
+    token = created.json()["share_url"].rsplit("/share/", 1)[1]
+
+    with TestClient(app) as other:
+        _register(other, f"shr-{uuid.uuid4().hex[:6]}@example.com")
+        base = _base(owner_client, "priv") + "/comments"
+        # Without the token, a non-member is blocked from the private page.
+        assert other.post(base, json={"body": "no"}).status_code == 403
+        # With a valid share token, commenting is allowed.
+        ok = other.post(base + f"?share_token={token}", json={"body": "via share"})
+        assert ok.status_code == 200, ok.text

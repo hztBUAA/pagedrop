@@ -107,10 +107,18 @@ export const assetApi = {
 };
 
 export const commentApi = {
-  list: (ws: string, slug: string, status?: "open" | "resolved") =>
-    api.get<Comment[]>(
-      `/projects/${ws}/${slug}/comments${status ? `?status=${status}` : ""}`,
-    ),
+  list: (
+    ws: string,
+    slug: string,
+    status?: "open" | "resolved",
+    shareToken?: string | null,
+  ) => {
+    const qs = new URLSearchParams();
+    if (status) qs.set("status", status);
+    if (shareToken) qs.set("share_token", shareToken);
+    const q = qs.toString();
+    return api.get<Comment[]>(`/projects/${ws}/${slug}/comments${q ? `?${q}` : ""}`);
+  },
   create: (
     ws: string,
     slug: string,
@@ -122,7 +130,14 @@ export const commentApi = {
       anchor_prefix?: string | null;
       anchor_suffix?: string | null;
     },
-  ) => api.post<Comment>(`/projects/${ws}/${slug}/comments`, payload),
+    shareToken?: string | null,
+  ) =>
+    api.post<Comment>(
+      `/projects/${ws}/${slug}/comments${
+        shareToken ? `?share_token=${encodeURIComponent(shareToken)}` : ""
+      }`,
+      payload,
+    ),
   resolve: (id: string) => api.post<Comment>(`/comments/${id}/resolve`),
   reopen: (id: string) => api.post<Comment>(`/comments/${id}/reopen`),
   del: (id: string) => api.del<{ status: string }>(`/comments/${id}`),

@@ -3,9 +3,10 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { publicApi } from "@/api";
 import { ApiRequestError } from "@/api/client";
-import type { PublicPage } from "@/api/types";
+import type { Comment, PublicPage } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import PageRenderer from "@/components/PageRenderer.vue";
+import CommentsPanel from "@/components/CommentsPanel.vue";
 import DocHeader from "@/components/DocHeader.vue";
 
 const route = useRoute();
@@ -20,6 +21,28 @@ const version = computed(() =>
 const page = ref<PublicPage | null>(null);
 const loading = ref(true);
 const error = ref("");
+
+// Anchored-comment wiring (same as the management page, minus moderation).
+const pendingAnchor = ref<{ quote: string; prefix: string; suffix: string } | null>(null);
+const focusedAnchorId = ref<string | null>(null);
+const comments = ref<Comment[]>([]);
+
+const anchors = computed(() =>
+  comments.value
+    .filter(
+      (c) =>
+        !c.thread_root_id &&
+        c.anchor_quote &&
+        (c.anchor_version_number == null ||
+          c.anchor_version_number === page.value?.version_number),
+    )
+    .map((c) => ({
+      id: c.id,
+      quote: c.anchor_quote as string,
+      prefix: c.anchor_prefix ?? "",
+      suffix: c.anchor_suffix ?? "",
+    })),
+);
 
 function applyNoindex(noindex: boolean) {
   const id = "pd-robots";
@@ -36,6 +59,8 @@ function applyNoindex(noindex: boolean) {
 async function load() {
   loading.value = true;
   error.value = "";
+  pendingAnchor.value = null;
+  focusedAnchorId.value = null;
   try {
     page.value = version.value
       ? await publicApi.version(wsSlug.value, projectSlug.value, version.value)
@@ -81,7 +106,26 @@ watch([wsSlug, projectSlug, version], load);
         :source-content="page.source_content"
         :rendered-html="page.rendered_html"
         :public-view="true"
+        :anchors="anchors"
+        :focused-anchor-id="focusedAnchorId"
+        @select="pendingAnchor = $event"
+        @anchor-click="focusedAnchorId = $event"
       />
+
+      <section class="comments">
+        <h2 class="comments-title">Comments</h2>
+        <CommentsPanel
+          :ws="wsSlug"
+          :slug="projectSlug"
+          mode="public"
+          :pending-anchor="pendingAnchor"
+          :active-version="page.version_number"
+          :focused-id="focusedAnchorId"
+          @clear-anchor="pendingAnchor = null"
+          @focus="focusedAnchorId = $event"
+          @loaded="comments = $event"
+        />
+      </section>
     </article>
   </div>
 </template>
@@ -92,6 +136,16 @@ watch([wsSlug, projectSlug, version], load);
 }
 .reader {
   max-width: 820px;
+}
+.comments {
+  max-width: 820px;
+  margin: 2.5rem auto 0;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+.comments-title {
+  font-size: 1.15rem;
+  margin: 0 0 1rem;
 }
 @media (max-width: 640px) {
   .reader {

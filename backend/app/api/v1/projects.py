@@ -57,7 +57,12 @@ def publish(
     if err:
         raise HTTPException(status_code=422, detail=err)
 
-    workspace = workspace_service.get_workspace_by_slug(db, payload.workspace_slug)
+    if payload.workspace_id is not None:
+        workspace = workspace_service.get_workspace(db, payload.workspace_id)
+    elif payload.workspace_slug is not None:
+        workspace = workspace_service.get_workspace_by_slug(db, payload.workspace_slug)
+    else:
+        raise HTTPException(status_code=422, detail="workspace_required")
     if workspace is None:
         raise HTTPException(status_code=404, detail="workspace_not_found")
 

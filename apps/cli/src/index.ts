@@ -47,6 +47,8 @@ interface Whoami {
   token_id: string | null;
   token_name: string | null;
   workspace_id: string | null;
+  workspace_slug?: string | null;
+  workspace_name?: string | null;
   scopes: string[];
 }
 
@@ -734,6 +736,35 @@ program
         return;
       }
       process.stdout.write(JSON.stringify(page, null, 2) + "\n");
+    } catch (err) {
+      reportApiError(err);
+    }
+  });
+
+const workspace = program
+  .command("workspace")
+  .description("Inspect workspaces available to the current credential");
+
+workspace
+  .command("list")
+  .description("List workspaces (a token sees only the one it is bound to)")
+  .option("--json", "output raw JSON", false)
+  .action(async (opts) => {
+    try {
+      const list = await clientFromProfile(program.opts().profile).get<
+        Array<{ id: string; slug: string; name: string; type: string; role: string }>
+      >("/workspaces");
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(list, null, 2) + "\n");
+        return;
+      }
+      if (list.length === 0) {
+        process.stdout.write("(no workspaces)\n");
+        return;
+      }
+      for (const w of list) {
+        process.stdout.write(`${w.slug}\t${w.type}\t${w.role || "-"}\t${w.name}\t${w.id}\n`);
+      }
     } catch (err) {
       reportApiError(err);
     }

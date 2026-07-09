@@ -7,7 +7,8 @@ from app.models.project import CONTENT_TYPES, VISIBILITIES
 
 
 class PublishRequest(BaseModel):
-    workspace_slug: str
+    workspace_slug: str | None = None
+    workspace_id: UUID | None = None
     slug: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=300)
     content_type: str = "markdown"

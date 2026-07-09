@@ -136,3 +136,63 @@ def test_token_read_requires_scope(owner):
         )
         assert resp.status_code == 403
         assert resp.json()["detail"] == "insufficient_scope"
+
+
+def test_whoami_returns_workspace_slug_for_token(owner):
+    token = _create_token(owner, ["projects:read"]).json()["token"]
+    with TestClient(app) as api:
+        who = api.get(
+            "/api/v1/auth/whoami", headers={"Authorization": f"Bearer {token}"}
+        ).json()
+    assert who["type"] == "token"
+    assert who["workspace_slug"] == owner.workspace_slug
+    assert who["workspace_name"]
+
+
+def test_token_lists_only_its_workspace(owner):
+    token = _create_token(owner, ["projects:read"]).json()["token"]
+    with TestClient(app) as api:
+        ws = api.get(
+            "/api/v1/workspaces", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert ws.status_code == 200, ws.text
+        body = ws.json()
+        assert len(body) == 1
+        assert body[0]["slug"] == owner.workspace_slug
+
+
+def test_publish_by_workspace_id(owner):
+    token = _create_token(owner, ["versions:write"]).json()["token"]
+    with TestClient(app) as api:
+        resp = api.post(
+            "/api/v1/projects.publish",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "workspace_id": owner.workspace_id,
+                "slug": "by-id",
+                "title": "By Id",
+                "content_type": "markdown",
+                "content": "# hi",
+                "visibility": "private",
+                "source": "agent",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["slug"] == "by-id"
+
+
+def test_publish_without_workspace_is_422(owner):
+    token = _create_token(owner, ["versions:write"]).json()["token"]
+    with TestClient(app) as api:
+        resp = api.post(
+            "/api/v1/projects.publish",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "slug": "no-ws",
+                "title": "No WS",
+                "content_type": "markdown",
+                "content": "# hi",
+                "visibility": "private",
+            },
+        )
+        assert resp.status_code == 422

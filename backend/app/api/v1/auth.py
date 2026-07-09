@@ -28,6 +28,7 @@ from app.services import (
     github_oauth_service,
     oauth_providers,
     verification_service,
+    workspace_service,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -239,7 +240,10 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.get("/whoami", response_model=WhoamiOut)
-def whoami(actor: Actor = Depends(get_actor)):
+def whoami(actor: Actor = Depends(get_actor), db: Session = Depends(get_db)):
+    workspace = None
+    if actor.token is not None:
+        workspace = workspace_service.get_workspace(db, actor.token.workspace_id)
     return WhoamiOut(
         type="token" if actor.token else "user",
         user_id=actor.user_id,
@@ -247,5 +251,7 @@ def whoami(actor: Actor = Depends(get_actor)):
         token_id=actor.token_id,
         token_name=actor.token.name if actor.token else None,
         workspace_id=actor.token.workspace_id if actor.token else None,
+        workspace_slug=workspace.slug if workspace else None,
+        workspace_name=workspace.name if workspace else None,
         scopes=sorted(actor.scopes),
     )

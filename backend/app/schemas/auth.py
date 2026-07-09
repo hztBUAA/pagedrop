@@ -62,4 +62,6 @@ class WhoamiOut(BaseModel):
     token_id: UUID | None = None
     token_name: str | None = None
     workspace_id: UUID | None = None
+    workspace_slug: str | None = None
+    workspace_name: str | None = None
     scopes: list[str] = Field(default_factory=list)

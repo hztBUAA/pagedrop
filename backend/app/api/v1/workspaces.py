@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.actor import Actor, get_actor
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
@@ -20,9 +21,18 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
 @router.get("", response_model=list[WorkspaceWithRole])
-def list_workspaces(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_workspaces(actor: Actor = Depends(get_actor), db: Session = Depends(get_db)):
+    # A token is bound to a single workspace, so it only ever sees that one.
+    if actor.token is not None:
+        actor.require_scope("projects:read")
+        ws = ws_service.get_workspace(db, actor.token.workspace_id)
+        if ws is None:
+            return []
+        item = WorkspaceWithRole.model_validate(ws)
+        item.role = (perms.get_role(db, actor.user_id, ws.id) or "") if actor.user_id else ""
+        return [item]
     out = []
-    for ws, role in ws_service.list_for_user(db, user):
+    for ws, role in ws_service.list_for_user(db, actor.user):
         item = WorkspaceWithRole.model_validate(ws)
         item.role = role
         out.append(item)

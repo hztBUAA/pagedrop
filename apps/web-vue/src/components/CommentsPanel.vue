@@ -28,6 +28,7 @@ const emit = defineEmits<{
   clearAnchor: [];
   focus: [id: string | null];
   loaded: [comments: Comment[]];
+  jumpVersion: [n: number];
 }>();
 
 const auth = useAuthStore();
@@ -211,6 +212,19 @@ watch(
             <div class="c-meta muted">
               <strong>{{ c.author_display ?? "?" }}</strong>
               <span class="badge" :class="{ private: c.status === 'resolved' }">{{ c.status }}</span>
+              <button
+                v-if="
+                  c.anchor_version_number != null &&
+                  activeVersion != null &&
+                  c.anchor_version_number !== activeVersion
+                "
+                type="button"
+                class="badge unlisted ver-badge"
+                :title="`Anchored to v${c.anchor_version_number} — click to view`"
+                @click.stop="emit('jumpVersion', c.anchor_version_number as number)"
+              >
+                on v{{ c.anchor_version_number }}
+              </button>
               · {{ new Date(c.created_at).toLocaleString() }}
             </div>
             <blockquote v-if="c.anchor_quote" class="anchor">{{ c.anchor_quote }}</blockquote>
@@ -299,5 +313,10 @@ watch(
   border-left: 2px solid var(--border);
   padding-left: 0.7rem;
   margin-left: 0.3rem;
+}
+.ver-badge {
+  cursor: pointer;
+  border: none;
+  font: inherit;
 }
 </style>

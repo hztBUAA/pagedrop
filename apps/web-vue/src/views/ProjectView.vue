@@ -80,6 +80,12 @@ const publicUrl = computed(() =>
   project.value ? `/p/${wsSlug.value}/${projectSlug.value}` : "",
 );
 
+// On the View tab the header follows the version being read (older versions
+// can carry a different title); elsewhere it shows the project's latest title.
+const headerTitle = computed(() =>
+  tab.value === "view" && active.value ? active.value.title : project.value?.title ?? "",
+);
+
 watch([wsSlug, projectSlug], loadProject, { immediate: true });
 </script>
 
@@ -91,7 +97,7 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
     <template v-else-if="project">
       <header class="proj-head" :class="{ open: detailsOpen }">
         <div class="proj-bar">
-          <h1 class="proj-title">{{ project.title }}</h1>
+          <h1 class="proj-title">{{ headerTitle }}</h1>
           <button
             type="button"
             class="proj-toggle"
@@ -155,6 +161,7 @@ watch([wsSlug, projectSlug], loadProject, { immediate: true });
               :focused-id="focusedAnchorId"
               @clear-anchor="pendingAnchor = null"
               @focus="focusedAnchorId = $event"
+              @jump-version="viewVersion($event)"
               @loaded="comments = $event"
             />
           </aside>

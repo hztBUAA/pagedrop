@@ -425,6 +425,50 @@ program
     }
   });
 
+interface ProjectListItem {
+  id: string;
+  workspace_id: string;
+  slug: string;
+  title: string;
+  visibility: string;
+  updated_at: string;
+}
+
+program
+  .command("list")
+  .description("List projects in a workspace (defaults to the token's workspace)")
+  .option("--workspace-id <uuid>", "workspace id (required for user sessions)")
+  .option("-q, --search <text>", "filter by title or slug")
+  .option("--limit <n>", "max results (default 50)", (v) => parseInt(v, 10))
+  .option("--offset <n>", "skip N results", (v) => parseInt(v, 10))
+  .option("--json", "output raw JSON", false)
+  .action(async (opts) => {
+    const params = new URLSearchParams();
+    if (opts.workspaceId) params.set("workspace_id", opts.workspaceId);
+    if (opts.search) params.set("q", opts.search);
+    if (opts.limit != null) params.set("limit", String(opts.limit));
+    if (opts.offset != null) params.set("offset", String(opts.offset));
+    const query = params.toString();
+    try {
+      const projects = await clientFromProfile(program.opts().profile).get<ProjectListItem[]>(
+        `/projects${query ? `?${query}` : ""}`,
+      );
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(projects, null, 2) + "\n");
+        return;
+      }
+      if (projects.length === 0) {
+        process.stdout.write("(no projects)\n");
+        return;
+      }
+      for (const p of projects) {
+        process.stdout.write(`${p.slug}\t${p.visibility}\t${p.updated_at}\t${p.title}\n`);
+      }
+    } catch (err) {
+      reportApiError(err);
+    }
+  });
+
 program
   .command("info")
   .description("Show project metadata")

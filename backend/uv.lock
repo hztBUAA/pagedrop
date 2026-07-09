@@ -668,6 +668,7 @@ dependencies = [
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "gunicorn" },
+    { name = "httpx" },
     { name = "nh3" },
     { name = "passlib", extra = ["argon2"] },
     { name = "psycopg", extra = ["binary"] },
@@ -681,7 +682,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -692,7 +692,7 @@ requires-dist = [
     { name = "email-validator", specifier = ">=2.2.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "gunicorn", specifier = ">=23.0.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "nh3", specifier = ">=0.2.18" },
     { name = "passlib", extras = ["argon2"], specifier = ">=1.7.4" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },

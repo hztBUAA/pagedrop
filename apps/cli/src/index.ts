@@ -676,6 +676,9 @@ program
     try {
       let page: ReadPage;
       let resolvedVersion: number | undefined = t.kind === "version" ? t.version : undefined;
+      // Set when we fall back to the anonymous public endpoints (cross-workspace
+      // public/unlisted reads): assets must then be fetched publicly too.
+      let viaPublic = false;
 
       if (t.kind === "share") {
         try {
@@ -692,16 +695,34 @@ program
           }
         }
       } else {
-        if (resolvedVersion === undefined) {
-          const versions = await client.get<Array<{ version_number: number }>>(
-            `/projects/${t.workspace}/${t.slug}/versions`,
+        const fetchPublic = () =>
+          resolvedVersion === undefined
+            ? client.get<ReadPage>(`/public/projects/${t.workspace}/${t.slug}/latest`)
+            : client.get<ReadPage>(
+                `/public/projects/${t.workspace}/${t.slug}/versions/${resolvedVersion}`,
+              );
+        try {
+          if (resolvedVersion === undefined) {
+            const versions = await client.get<Array<{ version_number: number }>>(
+              `/projects/${t.workspace}/${t.slug}/versions`,
+            );
+            if (versions.length === 0) fail("project has no versions");
+            resolvedVersion = Math.max(...versions.map((v) => v.version_number));
+          }
+          page = await client.get<ReadPage>(
+            `/projects/${t.workspace}/${t.slug}/versions/${resolvedVersion}`,
           );
-          if (versions.length === 0) fail("project has no versions");
-          resolvedVersion = Math.max(...versions.map((v) => v.version_number));
+        } catch (err) {
+          // The token is bound to one workspace, but public/unlisted pages are
+          // readable by anyone — fall back to the public endpoint so agents can
+          // read them the way a browser would. Private pages stay 404 there.
+          if (err instanceof ApiError && [401, 403, 404].includes(err.status)) {
+            page = await fetchPublic();
+            viaPublic = true;
+          } else {
+            throw err;
+          }
         }
-        page = await client.get<ReadPage>(
-          `/projects/${t.workspace}/${t.slug}/versions/${resolvedVersion}`,
-        );
       }
 
       if (opts.out) {
@@ -717,7 +738,9 @@ program
           const path =
             t.kind === "share"
               ? `/public/assets/${id}?share_token=${encodeURIComponent(t.token)}`
-              : `/assets/${id}`;
+              : viaPublic
+                ? `/public/assets/${id}`
+                : `/assets/${id}`;
           const { data, contentType } = await client.getBytes(path);
           const ext = EXT_BY_MIME[contentType] ?? "bin";
           const rel = join("assets", `${id}.${ext}`);

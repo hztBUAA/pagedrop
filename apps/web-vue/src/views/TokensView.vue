@@ -14,6 +14,8 @@ const ALL_SCOPES = [
   "versions:read",
   "versions:write",
   "assets:write",
+  "comments:read",
+  "comments:write",
   "share_links:create",
   "tokens:read",
 ];
@@ -88,6 +90,14 @@ function toggleScope(s: string) {
   else scopes.value.push(s);
 }
 
+function selectAllScopes() {
+  scopes.value = [...ALL_SCOPES];
+}
+
+function clearScopes() {
+  scopes.value = [];
+}
+
 watch(() => current.value?.id, load, { immediate: true });
 </script>
 
@@ -102,7 +112,13 @@ watch(() => current.value?.id, load, { immediate: true });
         <input v-model="name" class="input" placeholder="ci-bot" required />
       </div>
       <div class="field" style="margin: 0">
-        <label>Scopes</label>
+        <div class="scope-head">
+          <label style="margin: 0">Scopes</label>
+          <div class="scope-actions">
+            <button type="button" class="btn btn-sm" @click="selectAllScopes">All</button>
+            <button type="button" class="btn btn-sm" @click="clearScopes">None</button>
+          </div>
+        </div>
         <div class="scopes">
           <label v-for="s in ALL_SCOPES" :key="s" class="scope">
             <input
@@ -166,6 +182,17 @@ watch(() => current.value?.id, load, { immediate: true });
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
+}
+.scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.scope-actions {
+  display: flex;
+  gap: 0.35rem;
 }
 .scope {
   display: flex;

@@ -16,9 +16,13 @@ They can visit the site later in any browser to view or manage what you publishe
 
 ## Onboarding in 3 steps (all CLI)
 
-1. Install the CLI (Node >= 20). Not yet on npm — install from the monorepo:
-      cd apps/cli && pnpm install && pnpm build && pnpm link --global
-   (this exposes a global `pagedrop` command; `node dist/index.js` also works)
+1. Install the CLI (Node >= 20 + pnpm). Not yet on npm — clone the repo and build:
+      git clone https://github.com/hztBUAA/pagedrop.git
+      cd pagedrop/apps/cli && pnpm install && pnpm build && pnpm link --global
+   This exposes a global `pagedrop` command. If `pnpm link --global` fails with
+   ERR_PNPM_NO_GLOBAL_BIN_DIR, run `pnpm setup` once (it edits your shell profile —
+   reopen the shell), then retry the link. You can also skip linking entirely and run
+   `node dist/index.js …` from apps/cli in place of `pagedrop`.
 
 2. Get a credential — pick ONE:
 
@@ -40,8 +44,10 @@ They can visit the site later in any browser to view or manage what you publishe
 
    Each of these ends by minting a scoped API token and storing it at
    ~/.pagedrop/config.json (mode 0600). The user is now publish-ready.
-   Token scopes granted: versions:write, versions:read, projects:read,
+   Scopes on a freshly minted token: versions:write, versions:read, projects:read,
    assets:write, share_links:create, comments:read, comments:write.
+   (A token handed to you via `login --token` may carry an older/different scope set —
+   run `pagedrop whoami` to see the token's actual scopes before relying on them.)
 
    Already have a token string? pagedrop login --token pd_live_xxx
 
@@ -52,8 +58,11 @@ They can visit the site later in any browser to view or manage what you publishe
    pagedrop publish report.md -w WORKSPACE -s SLUG -T "Title"
    generate_report | pagedrop publish - -w WORKSPACE -s SLUG -T "Title"
 
-   The workspace slug is the user's auto-created personal workspace; `pagedrop
-   whoami` shows the active identity. `publish` prints a `latest:` URL to hand back.
+   Never guess the workspace slug — discover it. `pagedrop whoami` prints the active
+   identity as JSON, including `workspace_slug` and `workspace_name`; `pagedrop
+   workspace list` lists the workspace(s) the credential can use. A token is bound to
+   one workspace, so whoami's `workspace_slug` is exactly what to pass as `-w`.
+   `publish` prints a `latest:` URL to hand back.
 
 ## Command cheat sheet
 

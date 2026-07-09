@@ -123,6 +123,7 @@ watch(() => route.params.token, load);
         :source-content="page.source_content"
         :rendered-html="page.rendered_html"
         :public-view="true"
+        :share-token="token()"
         :anchors="anchors"
         :focused-anchor-id="focusedAnchorId"
         @select="pendingAnchor = $event"

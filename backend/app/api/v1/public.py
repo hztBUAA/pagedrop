@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -122,6 +122,7 @@ def verify_share_password(
 @router.get("/assets/{asset_id}")
 def public_asset(
     asset_id: uuid.UUID,
+    share_token: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
@@ -132,7 +133,15 @@ def public_asset(
     if asset.project_id is None:
         raise HTTPException(status_code=404, detail="not_found")
     project = db.get(Project, asset.project_id)
-    if project is None or not perms.can_view_project(db, user, project):
+    if project is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    # A valid share link for this project authorizes its images too, so a
+    # privately-shared page renders inline instead of showing broken images.
+    allowed = perms.can_view_project(db, user, project)
+    if not allowed and share_token:
+        link = share_link_service.find_active(db, share_token)
+        allowed = link is not None and link.project_id == project.id
+    if not allowed:
         raise HTTPException(status_code=404, detail="not_found")
     return Response(
         content=asset_service.read_bytes(asset),

@@ -15,6 +15,7 @@ const props = defineProps<{
   sourceContent: string;
   renderedHtml: string | null;
   publicView?: boolean;
+  shareToken?: string | null;
   anchors?: Anchor[];
   focusedAnchorId?: string | null;
 }>();
@@ -29,7 +30,7 @@ const ASSET_REF = /pagedrop:\/\/asset\/([0-9a-fA-F-]{8,})/g;
 function resolveAssets(text: string | null): string | null {
   if (!text) return text;
   return text.replace(ASSET_REF, (_m, id: string) =>
-    assetUrl(id, props.publicView ?? false),
+    assetUrl(id, props.publicView ?? false, props.shareToken),
   );
 }
 

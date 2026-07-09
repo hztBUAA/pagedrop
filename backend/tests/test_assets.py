@@ -94,6 +94,28 @@ def test_private_asset_hidden_from_anon(owner_client):
         assert resp.status_code == 404
 
 
+def test_private_asset_served_via_share_token(owner_client):
+    _publish(owner_client, slug="shr", visibility="private")
+    asset_id = _upload(owner_client, project_slug="shr").json()["id"]
+    created = owner_client.post(
+        f"/api/v1/projects/{owner_client.workspace_slug}/shr/share-links",
+        json={"access_type": "latest"},
+    )
+    token = created.json()["share_url"].rsplit("/share/", 1)[1]
+    with TestClient(app) as anon:
+        # Without the token the private image is hidden.
+        assert anon.get(f"/api/v1/public/assets/{asset_id}").status_code == 404
+        # With a valid share token for the same project, it resolves.
+        ok = anon.get(f"/api/v1/public/assets/{asset_id}?share_token={token}")
+        assert ok.status_code == 200, ok.text
+        assert ok.content == PNG_BYTES
+        # A bogus token stays blocked.
+        assert (
+            anon.get(f"/api/v1/public/assets/{asset_id}?share_token=nope").status_code
+            == 404
+        )
+
+
 def test_public_asset_served_to_anon(owner_client):
     _publish(owner_client, slug="pubdoc", visibility="public")
     asset_id = _upload(owner_client, project_slug="pubdoc").json()["id"]

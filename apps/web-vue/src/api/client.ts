@@ -55,7 +55,8 @@ export const api = {
 };
 
 /** Resolve a stored pagedrop://asset/<id> reference to a fetchable URL. */
-export function assetUrl(assetId: string, publicView: boolean): string {
+export function assetUrl(assetId: string, publicView: boolean, shareToken?: string | null): string {
   const path = publicView ? `/public/assets/${assetId}` : `/assets/${assetId}`;
-  return `${window.location.origin}${BASE}${path}`;
+  const query = publicView && shareToken ? `?share_token=${encodeURIComponent(shareToken)}` : "";
+  return `${window.location.origin}${BASE}${path}${query}`;
 }

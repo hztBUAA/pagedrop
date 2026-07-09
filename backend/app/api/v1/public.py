@@ -39,7 +39,7 @@ def _to_page(
 
 
 def _guard(db: Session, user: User | None, project: Project) -> None:
-    if not perms.can_view_project(db, user, project):
+    if project.deleted_at is not None or not perms.can_view_project(db, user, project):
         raise HTTPException(status_code=404, detail="not_found")
 
 
@@ -80,6 +80,8 @@ def public_version(
 
 
 def _share_page(db: Session, link, project: Project) -> PublicPage:
+    if project is None or project.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="invalid_or_expired")
     ver = share_link_service.resolve_version(db, link, project)
     if ver is None:
         raise HTTPException(status_code=404, detail="no_versions")
@@ -133,7 +135,7 @@ def public_asset(
     if asset.project_id is None:
         raise HTTPException(status_code=404, detail="not_found")
     project = db.get(Project, asset.project_id)
-    if project is None:
+    if project is None or project.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not_found")
     # A valid share link for this project authorizes its images too, so a
     # privately-shared page renders inline instead of showing broken images.

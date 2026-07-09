@@ -229,3 +229,85 @@ def test_list_projects_token_allowlist_filters(owner_client):
     slugs = {p["slug"] for p in resp.json()}
     assert "allowed" in slugs and "hidden" not in slugs
 
+
+def test_publish_stores_and_normalizes_folder_path(owner_client):
+    resp = _publish(owner_client, slug="infra-doc", folder_path="/ops/pagedrop/")
+    assert resp.status_code == 200, resp.text
+    proj = owner_client.get(
+        f"/api/v1/projects/{owner_client.workspace_slug}/infra-doc"
+    ).json()
+    # Leading/trailing slashes are trimmed on the way in.
+    assert proj["folder_path"] == "ops/pagedrop"
+
+
+def test_folder_filter_matches_folder_and_descendants(owner_client):
+    _publish(owner_client, slug="root-doc", title="Root")
+    _publish(owner_client, slug="ops-a", title="A", folder_path="ops")
+    _publish(owner_client, slug="ops-b", title="B", folder_path="ops/pagedrop")
+    _publish(owner_client, slug="hr-a", title="HR", folder_path="hr")
+    ws_id = _workspace_id(owner_client)
+
+    got = owner_client.get(f"/api/v1/projects?workspace_id={ws_id}&folder=ops").json()
+    assert {p["slug"] for p in got} == {"ops-a", "ops-b"}
+
+    nested = owner_client.get(
+        f"/api/v1/projects?workspace_id={ws_id}&folder=ops/pagedrop"
+    ).json()
+    assert {p["slug"] for p in nested} == {"ops-b"}
+
+
+def test_list_folders_returns_distinct_paths(owner_client):
+    _publish(owner_client, slug="d1", folder_path="ops")
+    _publish(owner_client, slug="d2", folder_path="ops/pagedrop")
+    _publish(owner_client, slug="d3", folder_path="ops")
+    _publish(owner_client, slug="d4")  # no folder
+    ws_id = _workspace_id(owner_client)
+
+    folders = owner_client.get(f"/api/v1/projects/folders?workspace_id={ws_id}").json()
+    assert folders == ["ops", "ops/pagedrop"]
+
+
+def test_archive_hides_from_default_list_and_unarchive_restores(owner_client):
+    _publish(owner_client, slug="active-doc", title="Active")
+    _publish(owner_client, slug="to-archive", title="Archive Me")
+    ws_id = _workspace_id(owner_client)
+    ws = owner_client.workspace_slug
+
+    assert owner_client.post(f"/api/v1/projects/{ws}/to-archive/archive").status_code == 200
+
+    active = owner_client.get(f"/api/v1/projects?workspace_id={ws_id}").json()
+    assert {p["slug"] for p in active} == {"active-doc"}
+
+    archived = owner_client.get(
+        f"/api/v1/projects?workspace_id={ws_id}&status=archived"
+    ).json()
+    assert {p["slug"] for p in archived} == {"to-archive"}
+
+    all_p = owner_client.get(f"/api/v1/projects?workspace_id={ws_id}&status=all").json()
+    assert {p["slug"] for p in all_p} == {"active-doc", "to-archive"}
+
+    assert owner_client.post(f"/api/v1/projects/{ws}/to-archive/unarchive").status_code == 200
+    restored = owner_client.get(f"/api/v1/projects?workspace_id={ws_id}").json()
+    assert {p["slug"] for p in restored} == {"active-doc", "to-archive"}
+
+
+def test_soft_delete_removes_from_list_and_public(owner_client):
+    _publish(owner_client, slug="doomed", title="Doomed", visibility="public")
+    ws_id = _workspace_id(owner_client)
+    ws = owner_client.workspace_slug
+
+    assert owner_client.delete(f"/api/v1/projects/{ws}/doomed").status_code == 200
+
+    # Gone from every status view (soft-deleted rows are excluded outright).
+    for status in ("active", "archived", "all"):
+        got = owner_client.get(
+            f"/api/v1/projects?workspace_id={ws_id}&status={status}"
+        ).json()
+        assert all(p["slug"] != "doomed" for p in got)
+
+    # And no longer publicly reachable by direct URL.
+    with TestClient(app) as anon:
+        resp = anon.get(f"/api/v1/public/projects/{ws}/doomed/latest")
+        assert resp.status_code == 404
+
+

@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -19,6 +20,11 @@ VISIBILITY_UNLISTED = "unlisted"
 VISIBILITY_PRIVATE = "private"
 VISIBILITIES = {VISIBILITY_PUBLIC, VISIBILITY_UNLISTED, VISIBILITY_PRIVATE}
 
+# Lifecycle status
+STATUS_ACTIVE = "active"
+STATUS_ARCHIVED = "archived"
+STATUSES = {STATUS_ACTIVE, STATUS_ARCHIVED}
+
 
 class Project(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "projects"
@@ -34,6 +40,11 @@ class Project(UUIDMixin, TimestampMixin, Base):
         String(20), nullable=False, default=CONTENT_MARKDOWN
     )
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, default=VISIBILITY_UNLISTED)
+    folder_path: Mapped[str | None] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=STATUS_ACTIVE, server_default=STATUS_ACTIVE
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     latest_version_id: Mapped[uuid.UUID | None] = mapped_column(GUID)
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         GUID, ForeignKey("users.id"), nullable=False

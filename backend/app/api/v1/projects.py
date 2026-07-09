@@ -83,6 +83,7 @@ def publish(
             user_id=actor.user_id,
             token_id=actor.token_id,
             force=payload.force,
+            folder_path=payload.folder_path,
         )
     except project_service.SecretDetectedError as exc:
         audit_service.record(
@@ -136,6 +137,8 @@ def publish(
 def list_projects(
     workspace_id: uuid.UUID | None = Query(None),
     q: str | None = Query(None),
+    folder: str | None = Query(None),
+    status: str | None = Query("active"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     actor: Actor = Depends(get_actor),
@@ -152,12 +155,33 @@ def list_projects(
         if not perms.can_view_workspace(db, actor.user, workspace_id):
             raise HTTPException(status_code=403, detail="forbidden")
 
+    # "all" opts out of the active/archived status filter.
+    status_filter = None if status in (None, "all") else status
     projects = project_service.list_projects(
-        db, workspace_id, q=q, limit=limit, offset=offset
+        db, workspace_id, q=q, folder=folder, status=status_filter, limit=limit, offset=offset
     )
     if actor.token is not None and actor.token.project_allowlist:
         projects = [p for p in projects if actor.token_allows_project(p.slug)]
     return projects
+
+
+@router.get("/projects/folders", response_model=list[str])
+def list_folders(
+    workspace_id: uuid.UUID | None = Query(None),
+    actor: Actor = Depends(get_actor),
+    db: Session = Depends(get_db),
+):
+    if actor.token is not None:
+        actor.require_scope("projects:read")
+        if workspace_id is not None and workspace_id != actor.token.workspace_id:
+            raise HTTPException(status_code=403, detail="token_workspace_mismatch")
+        workspace_id = actor.token.workspace_id
+    else:
+        if workspace_id is None:
+            raise HTTPException(status_code=422, detail="workspace_id_required")
+        if not perms.can_view_workspace(db, actor.user, workspace_id):
+            raise HTTPException(status_code=403, detail="forbidden")
+    return project_service.list_folders(db, workspace_id)
 
 
 def _load_project_for_read(
@@ -244,4 +268,43 @@ def update_settings(
         title=payload.title,
         description=payload.description,
         visibility=payload.visibility,
+        folder_path=payload.folder_path,
     )
+
+
+@router.post("/projects/{workspace_slug}/{slug}/archive", response_model=ProjectOut)
+def archive_project(
+    workspace_slug: str,
+    slug: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.project import STATUS_ARCHIVED
+
+    project = _load_project_for_manage(db, user, workspace_slug, slug)
+    return project_service.set_status(db, project, STATUS_ARCHIVED)
+
+
+@router.post("/projects/{workspace_slug}/{slug}/unarchive", response_model=ProjectOut)
+def unarchive_project(
+    workspace_slug: str,
+    slug: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.project import STATUS_ACTIVE
+
+    project = _load_project_for_manage(db, user, workspace_slug, slug)
+    return project_service.set_status(db, project, STATUS_ACTIVE)
+
+
+@router.delete("/projects/{workspace_slug}/{slug}")
+def delete_project(
+    workspace_slug: str,
+    slug: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    project = _load_project_for_manage(db, user, workspace_slug, slug)
+    project_service.soft_delete(db, project)
+    return {"status": "deleted"}

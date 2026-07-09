@@ -14,6 +14,7 @@ class PublishRequest(BaseModel):
     content_type: str = "markdown"
     content: str
     visibility: str = "private"
+    folder_path: str | None = Field(default=None, max_length=500)
     message: str | None = None
     summary: str | None = None
     source: str = "web"
@@ -48,6 +49,8 @@ class ProjectOut(BaseModel):
     description: str | None = None
     default_content_type: str
     visibility: str
+    folder_path: str | None = None
+    status: str = "active"
     latest_version_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
@@ -86,3 +89,4 @@ class ProjectSettingsUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=300)
     description: str | None = None
     visibility: str | None = None
+    folder_path: str | None = Field(default=None, max_length=500)

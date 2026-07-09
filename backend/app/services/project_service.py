@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -8,7 +9,7 @@ from app.models.page_version import (
     SCAN_PASSED,
     PageVersion,
 )
-from app.models.project import Project
+from app.models.project import STATUS_ACTIVE, STATUS_ARCHIVED, Project
 from app.models.workspace import Workspace
 from app.render import service as render_service
 from app.services import asset_service, secret_scan_service
@@ -39,10 +40,24 @@ def list_projects(
     workspace_id: uuid.UUID,
     *,
     q: str | None = None,
+    folder: str | None = None,
+    status: str | None = STATUS_ACTIVE,
     limit: int | None = None,
     offset: int = 0,
 ) -> list[Project]:
-    stmt = select(Project).where(Project.workspace_id == workspace_id)
+    stmt = select(Project).where(
+        Project.workspace_id == workspace_id, Project.deleted_at.is_(None)
+    )
+    if status is not None:
+        stmt = stmt.where(Project.status == status)
+    if folder:
+        # A folder selection includes the folder itself and everything nested
+        # beneath it (folder_path uses "/" as the level separator).
+        prefix = folder.strip("/")
+        stmt = stmt.where(
+            (Project.folder_path == prefix)
+            | Project.folder_path.ilike(f"{prefix}/%")
+        )
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(Project.title.ilike(like) | Project.slug.ilike(like))
@@ -50,6 +65,22 @@ def list_projects(
     if limit is not None:
         stmt = stmt.limit(limit)
     return list(db.scalars(stmt))
+
+
+def list_folders(db: Session, workspace_id: uuid.UUID) -> list[str]:
+    """Distinct non-empty folder paths for active projects in a workspace."""
+    rows = db.scalars(
+        select(Project.folder_path)
+        .where(
+            Project.workspace_id == workspace_id,
+            Project.deleted_at.is_(None),
+            Project.status == STATUS_ACTIVE,
+            Project.folder_path.isnot(None),
+            Project.folder_path != "",
+        )
+        .distinct()
+    )
+    return sorted({r for r in rows if r})
 
 
 def _next_version_number(db: Session, project_id: uuid.UUID) -> int:
@@ -101,6 +132,7 @@ def publish(
     user_id: uuid.UUID | None,
     token_id: uuid.UUID | None,
     force: bool = False,
+    folder_path: str | None = None,
 ) -> tuple[Project, PageVersion]:
     findings = secret_scan_service.scan(content)
     if findings and not force:
@@ -116,10 +148,13 @@ def publish(
             title=title,
             default_content_type=content_type,
             visibility=visibility,
+            folder_path=(folder_path.strip("/") or None) if folder_path else None,
             created_by_user_id=user_id or workspace.owner_user_id,
         )
         db.add(project)
         db.flush()
+    elif folder_path is not None:
+        project.folder_path = folder_path.strip("/") or None
 
     version_number = _next_version_number(db, project.id)
     rendered = render_service.prepare_content(content_type, content)
@@ -162,6 +197,7 @@ def update_settings(
     title: str | None,
     description: str | None,
     visibility: str | None,
+    folder_path: str | None = None,
 ) -> Project:
     if title is not None:
         project.title = title
@@ -169,6 +205,21 @@ def update_settings(
         project.description = description
     if visibility is not None:
         project.visibility = visibility
+    if folder_path is not None:
+        project.folder_path = folder_path.strip("/") or None
     db.commit()
     db.refresh(project)
     return project
+
+
+def set_status(db: Session, project: Project, status: str) -> Project:
+    project.status = status
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def soft_delete(db: Session, project: Project) -> None:
+    project.deleted_at = datetime.now(timezone.utc)
+    project.status = STATUS_ARCHIVED
+    db.commit()

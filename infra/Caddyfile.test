@@ -1,0 +1,22 @@
+# Test-stack reverse proxy. Identical to the production Caddyfile except the API
+# upstream points at the test backend service (testbackend), so it never shares
+# a network alias with the production `backend` on infra_default.
+{$SITE_ADDRESS::80} {
+	encode gzip zstd
+
+	handle /api/* {
+		reverse_proxy testbackend:8000
+	}
+
+	handle_path /render/* {
+		root * /srv/render
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,0 +1,73 @@
+# PageDrop TEST stack — a public preview of unreleased front/back changes.
+#
+# It shares the PRODUCTION database and asset volume on purpose: this is a
+# small-scale preview so the owner can eyeball changes over the public internet
+# via a separate hostname (pagedrop-test.justinhuang.top). It is NOT isolated
+# and must not be treated as a safe sandbox.
+#
+# Service names are deliberately distinct from the prod stack (testbackend /
+# testweb). Compose auto-aliases every service by its name on each network it
+# joins; reusing `backend`/`web`/`postgres` would collide with the prod aliases
+# on the shared external `infra_default` network.
+#
+# Usage (from infra/):
+#   docker compose -p pagedrop-test -f docker-compose.test.yml up -d --build
+#
+# The prod Postgres container is reachable as `postgres` on infra_default, so
+# the DATABASE_URL from .env resolves without change.
+
+services:
+  testbackend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Same DB and secrets as prod (from .env); only the public URLs differ.
+      APP_BASE_URL: https://pagedrop-test.justinhuang.top
+      CORS_ORIGINS: https://pagedrop-test.justinhuang.top
+      ASSETS_DIR: /data/assets
+      HTTP_PROXY: ${OAUTH_HTTP_PROXY:-}
+      HTTPS_PROXY: ${OAUTH_HTTP_PROXY:-}
+      NO_PROXY: ${OAUTH_NO_PROXY:-postgres,localhost,127.0.0.1}
+    expose:
+      - "8000"
+    networks:
+      - testnet
+      - infra
+    volumes:
+      - asset_data:/data/assets
+
+  testweb:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - testbackend
+    environment:
+      SITE_ADDRESS: ":80"
+    ports:
+      # Behind Cloudflare Tunnel: publish plain HTTP to localhost only.
+      - "127.0.0.1:8091:80"
+    networks:
+      - testnet
+    volumes:
+      # Reverse-proxies /api/* to `testbackend` instead of prod `backend`.
+      - ./Caddyfile.test:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+networks:
+  testnet:
+  infra:
+    external: true
+    name: infra_default
+
+volumes:
+  caddy_data:
+  caddy_config:
+  asset_data:
+    external: true
+    name: infra_asset_data

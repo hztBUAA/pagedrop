@@ -326,6 +326,7 @@ program
   .option("-v, --visibility <visibility>", "public | unlisted | private", "private")
   .option("-m, --message <message>", "changelog message for this version")
   .option("--summary <summary>", "short summary")
+  .option("--folder <path>", "folder path for organization, e.g. 'ops/pagedrop'")
   .option("--no-images", "do not upload/rewrite local images referenced in the content")
   .option("--force", "publish even if secrets are detected", false)
   .action(async (file, opts) => {
@@ -380,6 +381,7 @@ program
       visibility: opts.visibility,
       message: opts.message ?? null,
       summary: opts.summary ?? null,
+      folder_path: opts.folder ?? null,
       source: "agent",
       force: Boolean(opts.force),
     };
@@ -441,6 +443,8 @@ program
   .description("List projects in a workspace (defaults to the token's workspace)")
   .option("--workspace-id <uuid>", "workspace id (required for user sessions)")
   .option("-q, --search <text>", "filter by title or slug")
+  .option("--folder <path>", "filter to a folder and its descendants")
+  .option("--status <status>", "active | archived | all (default active)")
   .option("--limit <n>", "max results (default 50)", (v) => parseInt(v, 10))
   .option("--offset <n>", "skip N results", (v) => parseInt(v, 10))
   .option("--json", "output raw JSON", false)
@@ -448,6 +452,8 @@ program
     const params = new URLSearchParams();
     if (opts.workspaceId) params.set("workspace_id", opts.workspaceId);
     if (opts.search) params.set("q", opts.search);
+    if (opts.folder) params.set("folder", opts.folder);
+    if (opts.status) params.set("status", opts.status);
     if (opts.limit != null) params.set("limit", String(opts.limit));
     if (opts.offset != null) params.set("offset", String(opts.offset));
     const query = params.toString();

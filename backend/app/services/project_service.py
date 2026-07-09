@@ -34,14 +34,22 @@ def get_project_by_slugs(db: Session, workspace_slug: str, slug: str) -> Project
     )
 
 
-def list_projects(db: Session, workspace_id: uuid.UUID) -> list[Project]:
-    return list(
-        db.scalars(
-            select(Project)
-            .where(Project.workspace_id == workspace_id)
-            .order_by(Project.updated_at.desc())
-        )
-    )
+def list_projects(
+    db: Session,
+    workspace_id: uuid.UUID,
+    *,
+    q: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[Project]:
+    stmt = select(Project).where(Project.workspace_id == workspace_id)
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(Project.title.ilike(like) | Project.slug.ilike(like))
+    stmt = stmt.order_by(Project.updated_at.desc()).offset(max(offset, 0))
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    return list(db.scalars(stmt))
 
 
 def _next_version_number(db: Session, project_id: uuid.UUID) -> int:

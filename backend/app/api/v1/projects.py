@@ -129,13 +129,30 @@ def publish(
 
 @router.get("/projects", response_model=list[ProjectOut])
 def list_projects(
-    workspace_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    workspace_id: uuid.UUID | None = Query(None),
+    q: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    actor: Actor = Depends(get_actor),
     db: Session = Depends(get_db),
 ):
-    if not perms.can_view_workspace(db, user, workspace_id):
-        raise HTTPException(status_code=403, detail="forbidden")
-    return project_service.list_projects(db, workspace_id)
+    if actor.token is not None:
+        actor.require_scope("projects:read")
+        if workspace_id is not None and workspace_id != actor.token.workspace_id:
+            raise HTTPException(status_code=403, detail="token_workspace_mismatch")
+        workspace_id = actor.token.workspace_id
+    else:
+        if workspace_id is None:
+            raise HTTPException(status_code=422, detail="workspace_id_required")
+        if not perms.can_view_workspace(db, actor.user, workspace_id):
+            raise HTTPException(status_code=403, detail="forbidden")
+
+    projects = project_service.list_projects(
+        db, workspace_id, q=q, limit=limit, offset=offset
+    )
+    if actor.token is not None and actor.token.project_allowlist:
+        projects = [p for p in projects if actor.token_allows_project(p.slug)]
+    return projects
 
 
 def _load_project_for_read(

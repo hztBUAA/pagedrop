@@ -160,3 +160,72 @@ def test_unlisted_accessible_and_noindex(owner_client):
         )
         assert resp.status_code == 200
         assert resp.json()["noindex"] is True
+
+
+def _workspace_id(client):
+    return client.get("/api/v1/workspaces").json()[0]["id"]
+
+
+def test_list_projects_search_and_pagination(owner_client):
+    _publish(owner_client, slug="alpha", title="Alpha Report")
+    _publish(owner_client, slug="beta", title="Beta Notes")
+    _publish(owner_client, slug="gamma", title="Gamma Alpha")
+    ws_id = _workspace_id(owner_client)
+
+    all_p = owner_client.get(f"/api/v1/projects?workspace_id={ws_id}").json()
+    assert len(all_p) == 3
+
+    # Search matches title or slug, case-insensitive.
+    found = owner_client.get(f"/api/v1/projects?workspace_id={ws_id}&q=alpha").json()
+    assert {p["slug"] for p in found} == {"alpha", "gamma"}
+
+    # Pagination.
+    page = owner_client.get(f"/api/v1/projects?workspace_id={ws_id}&limit=2&offset=0").json()
+    assert len(page) == 2
+    page2 = owner_client.get(f"/api/v1/projects?workspace_id={ws_id}&limit=2&offset=2").json()
+    assert len(page2) == 1
+
+
+def test_list_projects_requires_workspace_for_session_user(owner_client):
+    resp = owner_client.get("/api/v1/projects")
+    assert resp.status_code == 422
+
+
+def test_list_projects_with_api_token(owner_client):
+    _publish(owner_client, slug="tokvisible", title="Token Visible")
+    tok = owner_client.post(
+        "/api/v1/tokens",
+        json={
+            "workspace_slug": owner_client.workspace_slug,
+            "name": "lister",
+            "scopes": ["projects:read"],
+        },
+    ).json()["token"]
+
+    # Token needs no workspace_id (bound to its workspace) and lists projects.
+    resp = owner_client.get(
+        "/api/v1/projects", headers={"Authorization": f"Bearer {tok}"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert any(p["slug"] == "tokvisible" for p in resp.json())
+
+
+def test_list_projects_token_allowlist_filters(owner_client):
+    _publish(owner_client, slug="allowed", title="Allowed")
+    _publish(owner_client, slug="hidden", title="Hidden")
+    tok = owner_client.post(
+        "/api/v1/tokens",
+        json={
+            "workspace_slug": owner_client.workspace_slug,
+            "name": "scoped",
+            "scopes": ["projects:read"],
+            "project_allowlist": ["allowed"],
+        },
+    ).json()["token"]
+
+    resp = owner_client.get(
+        "/api/v1/projects", headers={"Authorization": f"Bearer {tok}"}
+    )
+    slugs = {p["slug"] for p in resp.json()}
+    assert "allowed" in slugs and "hidden" not in slugs
+
